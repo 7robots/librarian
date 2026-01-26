@@ -5,7 +5,10 @@ from pathlib import Path
 
 from textual.app import ComposeResult
 from textual.containers import Vertical, VerticalScroll
+from textual.message import Message
 from textual.widgets import Markdown, Static
+
+from ..wikilink import extract_wiki_target, is_wiki_link, preprocess_wiki_links
 
 
 class FileCache:
@@ -69,6 +72,14 @@ def invalidate_file_cache(path: Path) -> None:
 class Preview(Vertical):
     """Widget displaying a markdown file preview."""
 
+    class WikiLinkClicked(Message):
+        """Message emitted when a wiki link is clicked."""
+
+        def __init__(self, target: str, current_file: Path | None) -> None:
+            super().__init__()
+            self.target = target
+            self.current_file = current_file
+
     DEFAULT_CSS = """
     Preview {
         width: 1fr;
@@ -103,7 +114,7 @@ class Preview(Vertical):
     def compose(self) -> ComposeResult:
         yield Static("PREVIEW", id="preview-header")
         with VerticalScroll(id="preview-scroll"):
-            yield Markdown(id="preview-content")
+            yield Markdown(id="preview-content", open_links=False)
 
     @property
     def scroll_view(self) -> VerticalScroll:
@@ -130,7 +141,9 @@ class Preview(Vertical):
         # Try to get from cache first
         content = _file_cache.get(file_path)
         if content is not None:
-            await markdown.update(content)
+            # Preprocess wiki links before rendering
+            processed_content = preprocess_wiki_links(content)
+            await markdown.update(processed_content)
             return
 
         # Read from disk and cache
@@ -138,10 +151,23 @@ class Preview(Vertical):
             mtime = file_path.stat().st_mtime
             content = file_path.read_text(encoding="utf-8")
             _file_cache.put(file_path, mtime, content)
-            await markdown.update(content)
+            # Preprocess wiki links before rendering
+            processed_content = preprocess_wiki_links(content)
+            await markdown.update(processed_content)
         except (OSError, UnicodeDecodeError) as e:
             await markdown.update(f"*Error reading file: {e}*")
 
     def get_current_file(self) -> Path | None:
         """Get the currently displayed file path."""
         return self._current_file
+
+    def on_markdown_link_clicked(self, event: Markdown.LinkClicked) -> None:
+        """Handle link clicks in the markdown preview."""
+        href = event.href
+
+        if is_wiki_link(href):
+            # Extract target and emit WikiLinkClicked message
+            target = extract_wiki_target(href)
+            self.post_message(self.WikiLinkClicked(target, self._current_file))
+            event.prevent_default()
+        # For non-wiki links, let default behavior handle (or ignore since open_links=False)

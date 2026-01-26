@@ -30,6 +30,9 @@ A terminal-based markdown tag browser. Librarian scans your markdown files for i
 - **Live Preview**: Markdown rendered as you navigate
 - **Auto-Refresh**: File watcher updates index when files change
 - **Editor Integration**: Press `e` to edit files in your preferred editor
+- **Wiki Links**: Navigate between notes using `[[note.md]]` syntax
+- **Export**: Export files to PDF or HTML with one keypress
+- **File Creation**: Create new notes with automatic tag insertion
 - **Dynamic Layout**: Resize terminal window and UI adapts
 
 ## Installation
@@ -63,12 +66,15 @@ On first run, Librarian will:
 |-----|--------|
 | `q` | Quit |
 | `e` | Edit selected file in configured editor |
+| `n` | Create new markdown file with current tag |
+| `x` | Export selected file to PDF/HTML |
 | `p` | Show full path of selected file |
 | `r` | Manual refresh/rescan all files |
 | `Tab` | Cycle focus between panels (clockwise) |
 | `Shift+Tab` | Cycle focus backwards (counter-clockwise) |
 | `↑/↓` | Navigate lists / scroll preview |
 | `Enter` | Select tag |
+| `Escape` | Navigate back from wiki link |
 | `?` | Show help |
 
 Tab order follows a clockwise pattern: Favorites → Files → Preview → All Tags.
@@ -83,6 +89,9 @@ scan_directory = "~/Documents"
 
 # Editor command for editing files (e.g., "vim", "code", "nano")
 editor = "vim"
+
+# Directory for exported files (PDF/HTML)
+export_directory = "~/Downloads"
 
 # Tag filtering
 [tags]
@@ -100,6 +109,46 @@ Librarian recognizes hashtags in the format:
 - Must start with `#` followed by a letter
 - Can contain letters, numbers, underscores, and hyphens
 - Examples: `#project`, `#todo-list`, `#meeting_notes`, `#2024goals`
+
+## Wiki Links
+
+Navigate between notes using wiki-style links in your markdown files:
+
+### Syntax
+```markdown
+Link to a file: [[note.md]]
+Link with custom text: [[my-file|Custom Display Text]]
+Links with spaces: [[second test.md]]
+```
+
+### Usage
+1. Write wiki links in your markdown files using the `[[filename]]` syntax
+2. In the preview panel, click on a wiki link to navigate to that file
+3. Press `Escape` to navigate back to your previous view
+
+The navigation preserves your context, returning you to the exact tag and file position you were viewing before.
+
+## Creating New Files
+
+Press `n` while viewing a tag to create a new markdown file:
+
+1. A dialog appears with a suggested filename based on the current tag
+2. Edit the filename or press Enter to accept
+3. A new file is created with a template including the current tag
+4. The file opens automatically in your configured editor
+
+This makes it easy to quickly capture new notes within your existing tag structure.
+
+## Exporting Files
+
+Press `x` to export the currently selected file to PDF or HTML:
+
+- **PDF export**: Requires the optional `weasyprint` package
+  - Install with: `pip install 'librarian[pdf]'` or `uv pip install 'librarian[pdf]'`
+  - Note: weasyprint requires system dependencies (see their docs)
+- **HTML export**: Always available, creates a standalone HTML file
+
+Exported files are saved to your configured `export_directory` (default: `~/Downloads`) with professional styling suitable for sharing or printing.
 
 ## Data Storage
 
@@ -128,9 +177,17 @@ uv run python -m librarian
 
 ## Dependencies
 
+### Core Dependencies
 - [Textual](https://textual.textualize.io/) - TUI framework
 - [watchdog](https://python-watchdog.readthedocs.io/) - File system monitoring
 - [Rich](https://rich.readthedocs.io/) - Markdown rendering (bundled with Textual)
+- [Python Markdown](https://python-markdown.github.io/) - Markdown to HTML conversion
+
+### Optional Dependencies
+- [WeasyPrint](https://weasyprint.org/) - PDF export functionality
+  - Install with: `pip install 'librarian[pdf]'` or `uv pip install 'librarian[pdf]'`
+  - Requires system dependencies (see WeasyPrint documentation)
+  - If not installed, export will create HTML files instead
 
 ## License
 

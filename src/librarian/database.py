@@ -145,3 +145,53 @@ def clear_index() -> None:
 def cleanup_orphaned_tags() -> None:
     """No-op: tags are inline in JSON, no orphans possible."""
     pass
+
+
+def resolve_wiki_link(target: str, current_file: Path | None = None) -> Path | None:
+    """Resolve a wiki link target to a file path.
+
+    Resolution order:
+    1. Relative to current file's directory (if current_file provided)
+    2. Search by filename in index
+    3. Try appending .md extension if missing
+
+    Args:
+        target: The wiki link target (e.g., "note.md" or "folder/note")
+        current_file: The file containing the wiki link (for relative resolution)
+
+    Returns:
+        Resolved Path or None if not found
+    """
+    # Normalize target - remove leading/trailing whitespace
+    target = target.strip()
+
+    # List of targets to try (original and with .md extension)
+    targets_to_try = [target]
+    if not target.lower().endswith(".md"):
+        targets_to_try.append(f"{target}.md")
+
+    for try_target in targets_to_try:
+        # 1. Try relative to current file's directory
+        if current_file is not None:
+            relative_path = current_file.parent / try_target
+            if relative_path.exists() and relative_path.is_file():
+                return relative_path.resolve()
+
+        # 2. Search by filename in index
+        target_name = Path(try_target).name.lower()
+        for path_str in _index.keys():
+            indexed_path = Path(path_str)
+            if indexed_path.name.lower() == target_name:
+                if indexed_path.exists():
+                    return indexed_path
+
+        # 3. Search by path suffix (for targets like "folder/note.md")
+        if "/" in try_target:
+            target_suffix = try_target.lower()
+            for path_str in _index.keys():
+                if path_str.lower().endswith(target_suffix):
+                    indexed_path = Path(path_str)
+                    if indexed_path.exists():
+                        return indexed_path
+
+    return None
