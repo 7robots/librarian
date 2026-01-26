@@ -1,168 +1,111 @@
-"""SQLite database operations for indexing files and tags."""
+"""JSON-based index operations for indexing files and tags."""
 
-import sqlite3
-from contextlib import contextmanager
+import json
+import os
+from collections import defaultdict
 from pathlib import Path
-from typing import Generator
+from typing import TypedDict
 
-from .config import get_database_path
-
-
-def get_connection() -> sqlite3.Connection:
-    """Get a database connection."""
-    db_path = get_database_path()
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    return conn
+from .config import get_index_path
 
 
-@contextmanager
-def get_db() -> Generator[sqlite3.Connection, None, None]:
-    """Context manager for database connections."""
-    conn = get_connection()
+class FileEntry(TypedDict):
+    """Type for a file entry in the index."""
+
+    mtime: float
+    tags: list[str]
+
+
+# In-memory index cache
+_index: dict[str, FileEntry] = {}
+
+
+def _load_index() -> dict[str, FileEntry]:
+    """Load index from JSON file."""
+    index_path = get_index_path()
+    if not index_path.exists():
+        return {}
+
     try:
-        yield conn
-        conn.commit()
-    finally:
-        conn.close()
+        data = json.loads(index_path.read_text())
+        return data.get("files", {})
+    except (json.JSONDecodeError, KeyError):
+        return {}
+
+
+def _save_index() -> None:
+    """Save index to JSON file with atomic write."""
+    index_path = get_index_path()
+    index_path.parent.mkdir(parents=True, exist_ok=True)
+
+    temp_path = index_path.with_suffix(".json.tmp")
+    temp_path.write_text(json.dumps({"files": _index}, indent=2))
+    os.replace(temp_path, index_path)
 
 
 def init_database() -> None:
-    """Initialize the database schema."""
-    with get_db() as conn:
-        conn.executescript("""
-            CREATE TABLE IF NOT EXISTS files (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                path TEXT UNIQUE NOT NULL,
-                mtime REAL NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS tags (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT UNIQUE NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS file_tags (
-                file_id INTEGER NOT NULL,
-                tag_id INTEGER NOT NULL,
-                PRIMARY KEY (file_id, tag_id),
-                FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE,
-                FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_files_path ON files(path);
-            CREATE INDEX IF NOT EXISTS idx_tags_name ON tags(name);
-        """)
-
-
-def get_or_create_tag(conn: sqlite3.Connection, tag_name: str) -> int:
-    """Get or create a tag, returning its ID."""
-    cursor = conn.execute("SELECT id FROM tags WHERE name = ?", (tag_name,))
-    row = cursor.fetchone()
-    if row:
-        return row["id"]
-
-    cursor = conn.execute("INSERT INTO tags (name) VALUES (?)", (tag_name,))
-    return cursor.lastrowid
+    """Initialize the index by loading from JSON file."""
+    global _index
+    _index = _load_index()
 
 
 def add_file(path: Path, mtime: float, tags: list[str]) -> None:
     """Add or update a file with its tags."""
-    path_str = str(path)
-
-    with get_db() as conn:
-        # Check if file exists
-        cursor = conn.execute("SELECT id FROM files WHERE path = ?", (path_str,))
-        row = cursor.fetchone()
-
-        if row:
-            file_id = row["id"]
-            # Update mtime
-            conn.execute("UPDATE files SET mtime = ? WHERE id = ?", (mtime, file_id))
-            # Remove old tag associations
-            conn.execute("DELETE FROM file_tags WHERE file_id = ?", (file_id,))
-        else:
-            # Insert new file
-            cursor = conn.execute(
-                "INSERT INTO files (path, mtime) VALUES (?, ?)",
-                (path_str, mtime),
-            )
-            file_id = cursor.lastrowid
-
-        # Add tag associations
-        for tag in tags:
-            tag_id = get_or_create_tag(conn, tag)
-            conn.execute(
-                "INSERT OR IGNORE INTO file_tags (file_id, tag_id) VALUES (?, ?)",
-                (file_id, tag_id),
-            )
+    _index[str(path)] = {"mtime": mtime, "tags": tags}
+    _save_index()
 
 
 def remove_file(path: Path) -> None:
-    """Remove a file and its tag associations."""
-    with get_db() as conn:
-        conn.execute("DELETE FROM files WHERE path = ?", (str(path),))
+    """Remove a file from the index."""
+    path_str = str(path)
+    if path_str in _index:
+        del _index[path_str]
+        _save_index()
 
 
 def get_file_mtime(path: Path) -> float | None:
     """Get the stored mtime for a file, or None if not indexed."""
-    with get_db() as conn:
-        cursor = conn.execute(
-            "SELECT mtime FROM files WHERE path = ?", (str(path),)
-        )
-        row = cursor.fetchone()
-        return row["mtime"] if row else None
+    entry = _index.get(str(path))
+    return entry["mtime"] if entry else None
 
 
 def get_all_tags() -> list[tuple[str, int]]:
     """Get all tags with their file counts, sorted by count descending."""
-    with get_db() as conn:
-        cursor = conn.execute("""
-            SELECT t.name, COUNT(ft.file_id) as count
-            FROM tags t
-            JOIN file_tags ft ON t.id = ft.tag_id
-            GROUP BY t.id
-            ORDER BY count DESC, t.name ASC
-        """)
-        return [(row["name"], row["count"]) for row in cursor.fetchall()]
+    tag_counts: dict[str, int] = defaultdict(int)
+
+    for entry in _index.values():
+        for tag in entry["tags"]:
+            tag_counts[tag] += 1
+
+    # Sort by count descending, then name ascending
+    sorted_tags = sorted(tag_counts.items(), key=lambda x: (-x[1], x[0]))
+    return sorted_tags
 
 
 def get_files_by_tag(tag_name: str) -> list[tuple[Path, float]]:
     """Get all files with a specific tag."""
-    with get_db() as conn:
-        cursor = conn.execute("""
-            SELECT f.path, f.mtime
-            FROM files f
-            JOIN file_tags ft ON f.id = ft.file_id
-            JOIN tags t ON ft.tag_id = t.id
-            WHERE t.name = ?
-            ORDER BY f.path
-        """, (tag_name,))
-        return [(Path(row["path"]), row["mtime"]) for row in cursor.fetchall()]
+    result = []
+    for path_str, entry in _index.items():
+        if tag_name in entry["tags"]:
+            result.append((Path(path_str), entry["mtime"]))
+
+    # Sort by path
+    result.sort(key=lambda x: str(x[0]))
+    return result
 
 
 def get_all_files() -> list[Path]:
     """Get all indexed file paths."""
-    with get_db() as conn:
-        cursor = conn.execute("SELECT path FROM files ORDER BY path")
-        return [Path(row["path"]) for row in cursor.fetchall()]
+    return sorted(Path(p) for p in _index.keys())
 
 
 def clear_index() -> None:
     """Clear all indexed data."""
-    with get_db() as conn:
-        conn.executescript("""
-            DELETE FROM file_tags;
-            DELETE FROM files;
-            DELETE FROM tags;
-        """)
+    global _index
+    _index = {}
+    _save_index()
 
 
 def cleanup_orphaned_tags() -> None:
-    """Remove tags that have no associated files."""
-    with get_db() as conn:
-        conn.execute("""
-            DELETE FROM tags
-            WHERE id NOT IN (SELECT DISTINCT tag_id FROM file_tags)
-        """)
+    """No-op: tags are inline in JSON, no orphans possible."""
+    pass

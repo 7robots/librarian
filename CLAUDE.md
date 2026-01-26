@@ -12,7 +12,7 @@ src/librarian/
 ├── __main__.py          # Entry point, initializes app
 ├── app.py               # Main Textual App with layout and keybindings
 ├── config.py            # TOML config loading from ~/Documents/librarian/
-├── database.py          # SQLite index operations
+├── database.py          # JSON index operations (in-memory + file persistence)
 ├── scanner.py           # File scanning & hashtag extraction
 ├── watcher.py           # File system watcher using watchdog
 └── widgets/
@@ -26,20 +26,25 @@ src/librarian/
 
 - **Config/Data location**: `~/Documents/librarian/` (iCloud syncable)
 - **Config format**: TOML at `~/Documents/librarian/config.toml`
-- **Index storage**: SQLite at `~/Documents/librarian/index.db`
+- **Index storage**: JSON at `~/Documents/librarian/index.json` (iCloud-friendly atomic writes)
 - **Tag format**: Inline hashtags matching `#[a-zA-Z][a-zA-Z0-9_-]*`
 - **Auto-refresh**: watchdog monitors scan directory with debouncing
 - **Favorites**: Tags in config whitelist appear in dedicated Favorites panel
 
-## Database Schema
+## Index Schema
 
-```sql
-files(id, path, mtime)
-tags(id, name)
-file_tags(file_id, tag_id)
+```json
+{
+  "files": {
+    "/absolute/path/to/file.md": {
+      "mtime": 1234567890.123,
+      "tags": ["tag1", "tag2"]
+    }
+  }
+}
 ```
 
-Only files containing at least one hashtag are indexed.
+Denormalized structure with tags inline per file. Only files containing at least one hashtag are indexed. Uses atomic writes (temp file + `os.replace()`) for iCloud compatibility.
 
 ## UI Layout
 
@@ -69,13 +74,19 @@ async with app.run_test(size=(80, 24)) as pilot:
     await pilot.pause()
 ```
 
-### Checking database state
+### Checking index state
 ```bash
 uv run python -c "
-from librarian.database import get_all_tags, get_all_files
+from librarian.database import init_database, get_all_tags, get_all_files
+init_database()
 print(f'Tags: {len(get_all_tags())}')
 print(f'Files: {len(get_all_files())}')
 "
+```
+
+### Viewing raw index
+```bash
+cat ~/Documents/librarian/index.json
 ```
 
 ## Widget Communication

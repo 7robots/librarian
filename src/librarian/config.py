@@ -16,9 +16,9 @@ def get_config_path() -> Path:
     return get_data_dir() / "config.toml"
 
 
-def get_database_path() -> Path:
-    """Get the database file path."""
-    return get_data_dir() / "index.db"
+def get_index_path() -> Path:
+    """Get the JSON index file path."""
+    return get_data_dir() / "index.json"
 
 
 @dataclass
