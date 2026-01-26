@@ -77,7 +77,7 @@ class Preview(Vertical):
 
     Preview > #preview-header {
         background: $primary-background;
-        color: $text;
+        color: $success;
         text-style: bold;
         padding: 0 1;
         height: 1;

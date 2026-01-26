@@ -30,7 +30,7 @@ class FileList(Vertical):
 
     FileList > #file-header {
         background: $primary-background;
-        color: $text;
+        color: $accent;
         text-style: bold;
         padding: 0 1;
         height: 1;

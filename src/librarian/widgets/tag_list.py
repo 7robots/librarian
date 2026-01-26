@@ -38,10 +38,17 @@ class TagList(Vertical):
 
     TagList .tag-header {
         background: $primary-background;
-        color: $text;
         text-style: bold;
         padding: 0 1;
         height: 1;
+    }
+
+    TagList #favorites-header {
+        color: $warning;
+    }
+
+    TagList #all-tags-header {
+        color: $primary-lighten-2;
     }
 
     TagList ListView {
@@ -59,6 +66,19 @@ class TagList(Vertical):
     TagList ListItem.--highlight {
         background: $accent;
     }
+
+    TagList #favorites-section {
+        background: $primary-background-darken-1;
+    }
+
+    TagList #favorites-list-view ListItem {
+        color: $warning-lighten-1;
+    }
+
+    TagList #favorites-list-view ListItem.--highlight {
+        background: $warning-darken-2;
+        color: $text;
+    }
     """
 
     class TagSelected(Message):
@@ -74,11 +94,11 @@ class TagList(Vertical):
         self._favorites: list[str] = []
 
     def compose(self) -> ComposeResult:
-        with Vertical(classes="tag-section"):
-            yield Static("FAVORITES", classes="tag-header")
+        with Vertical(classes="tag-section", id="favorites-section"):
+            yield Static("\u2605 FAVORITES", classes="tag-header", id="favorites-header")
             yield ListView(id="favorites-list-view")
         with Vertical(classes="tag-section"):
-            yield Static("ALL TAGS", classes="tag-header")
+            yield Static("ALL TAGS", classes="tag-header", id="all-tags-header")
             yield ListView(id="all-tags-list-view")
 
     @property
