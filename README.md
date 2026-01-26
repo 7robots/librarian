@@ -54,7 +54,7 @@ uv run librarian
 On first run, Librarian will:
 1. Create config directory at `~/Documents/librarian/`
 2. Generate default config at `~/Documents/librarian/config.toml`
-3. Create SQLite index at `~/Documents/librarian/index.db`
+3. Create JSON index at `~/Documents/librarian/index.json`
 4. Scan `~/Documents` for markdown files with hashtags
 
 ## Keybindings
@@ -63,12 +63,15 @@ On first run, Librarian will:
 |-----|--------|
 | `q` | Quit |
 | `e` | Edit selected file in configured editor |
+| `p` | Show full path of selected file |
 | `r` | Manual refresh/rescan all files |
-| `Tab` | Cycle focus between panels |
-| `Shift+Tab` | Cycle focus backwards |
-| `↑/↓` | Navigate lists |
-| `Enter` | Select tag or open file |
+| `Tab` | Cycle focus between panels (clockwise) |
+| `Shift+Tab` | Cycle focus backwards (counter-clockwise) |
+| `↑/↓` | Navigate lists / scroll preview |
+| `Enter` | Select tag |
 | `?` | Show help |
+
+Tab order follows a clockwise pattern: Favorites → Files → Preview → All Tags.
 
 ## Configuration
 
@@ -102,14 +105,14 @@ Librarian recognizes hashtags in the format:
 
 All data is stored in `~/Documents/librarian/`:
 - `config.toml` - Configuration file
-- `index.db` - SQLite database with file/tag index
+- `index.json` - JSON index with file/tag mappings
 
 This location was chosen to enable iCloud sync on macOS.
 
 ## How It Works
 
 1. **Scanning**: Recursively finds `*.md` files in the scan directory
-2. **Indexing**: Extracts hashtags using regex, stores in SQLite with file modification times
+2. **Indexing**: Extracts hashtags using regex, stores in JSON with file modification times
 3. **Watching**: Uses `watchdog` to monitor for file changes with debouncing
 4. **Display**: Textual TUI with four panels - favorites, all tags, files, and markdown preview
 

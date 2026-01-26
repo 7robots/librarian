@@ -92,9 +92,25 @@ cat ~/Documents/librarian/index.json
 ## Widget Communication
 
 - `TagList` contains two ListViews (favorites + all tags), emits `TagSelected` message
-- `FileList` emits `FileHighlighted` when cursor moves, `FileSelected` on Enter
-- `Preview` receives file paths via `show_file()` async method
+- `FileList` emits `FileHighlighted` when cursor moves (updates preview)
+- `Preview` receives file paths via `show_file()` async method, scrollable when focused
 - App handles all messages in `on_<widget>_<message>` handlers
+
+## Keyboard Navigation
+
+Tab cycles through panels in clockwise order:
+1. Favorites (top-left)
+2. Files (top-right)
+3. Preview (bottom-right)
+4. All Tags (bottom-left)
+
+Custom focus order is defined in `LibrarianApp.FOCUS_ORDER` with overridden `action_focus_next`/`action_focus_previous` methods.
+
+Key bindings:
+- `e` - Edit selected file (only way to open editor)
+- `p` - Show full path of selected file
+- `r` - Refresh/rescan files
+- `?` - Show help
 
 ## CSS Layout Notes
 

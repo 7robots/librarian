@@ -90,6 +90,10 @@ class Preview(Vertical):
     Preview Markdown {
         padding: 0 1;
     }
+
+    Preview VerticalScroll:focus {
+        border: solid $accent;
+    }
     """
 
     def __init__(self, **kwargs) -> None:
@@ -98,8 +102,12 @@ class Preview(Vertical):
 
     def compose(self) -> ComposeResult:
         yield Static("PREVIEW", id="preview-header")
-        with VerticalScroll():
+        with VerticalScroll(id="preview-scroll"):
             yield Markdown(id="preview-content")
+
+    @property
+    def scroll_view(self) -> VerticalScroll:
+        return self.query_one("#preview-scroll", VerticalScroll)
 
     @property
     def markdown_widget(self) -> Markdown:

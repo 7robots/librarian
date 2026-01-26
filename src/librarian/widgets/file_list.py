@@ -102,11 +102,6 @@ class FileList(Vertical):
             list_view.index = 0
             self.post_message(self.FileHighlighted(files[0]))
 
-    def on_list_view_selected(self, event: ListView.Selected) -> None:
-        """Handle file selection (Enter pressed)."""
-        if isinstance(event.item, FileItem):
-            self.post_message(self.FileSelected(event.item.file_path))
-
     def on_list_view_highlighted(self, event: ListView.Highlighted) -> None:
         """Handle file highlight (cursor moved)."""
         if event.item is not None and isinstance(event.item, FileItem):

@@ -55,9 +55,18 @@ class LibrarianApp(App):
         Binding("q", "quit", "Quit"),
         Binding("e", "edit", "Edit"),
         Binding("r", "refresh", "Refresh"),
-        Binding("tab", "focus_next", "Next Panel"),
-        Binding("shift+tab", "focus_previous", "Prev Panel"),
+        Binding("tab", "focus_next", "Next Panel", show=False),
+        Binding("shift+tab", "focus_previous", "Prev Panel", show=False),
+        Binding("p", "show_path", "Show Path"),
         Binding("?", "help", "Help"),
+    ]
+
+    # Custom focus order: favorites -> files -> preview -> all tags (clockwise)
+    FOCUS_ORDER = [
+        "favorites-list-view",
+        "file-list-view",
+        "preview",
+        "all-tags-list-view",
     ]
 
     def __init__(self, config: Config) -> None:
@@ -179,9 +188,52 @@ class LibrarianApp(App):
         preview = self.query_one("#preview", Preview)
         await preview.show_file(event.file_path)
 
-    async def on_file_list_file_selected(self, event: FileList.FileSelected) -> None:
-        """Handle file selection (Enter pressed) - open in editor."""
-        await self._edit_file(event.file_path)
+    def _get_focus_widget(self, widget_id: str):
+        """Get a focusable widget by ID."""
+        tag_list = self.query_one("#tag-list", TagList)
+        if widget_id == "favorites-list-view":
+            return tag_list.favorites_list_view
+        elif widget_id == "all-tags-list-view":
+            return tag_list.all_tags_list_view
+        elif widget_id == "file-list-view":
+            return self.query_one("#file-list", FileList).list_view
+        elif widget_id == "preview":
+            return self.query_one("#preview", Preview).scroll_view
+        return None
+
+    def _get_current_focus_index(self) -> int:
+        """Get the index of the currently focused widget in FOCUS_ORDER."""
+        focused = self.focused
+        if focused is None:
+            return -1
+
+        tag_list = self.query_one("#tag-list", TagList)
+        file_list = self.query_one("#file-list", FileList)
+        preview = self.query_one("#preview", Preview)
+
+        focus_map = {
+            id(tag_list.favorites_list_view): 0,
+            id(file_list.list_view): 1,
+            id(preview.scroll_view): 2,
+            id(tag_list.all_tags_list_view): 3,
+        }
+        return focus_map.get(id(focused), -1)
+
+    def action_focus_next(self) -> None:
+        """Focus the next panel in clockwise order."""
+        current = self._get_current_focus_index()
+        next_index = (current + 1) % len(self.FOCUS_ORDER)
+        widget = self._get_focus_widget(self.FOCUS_ORDER[next_index])
+        if widget:
+            widget.focus()
+
+    def action_focus_previous(self) -> None:
+        """Focus the previous panel in counter-clockwise order."""
+        current = self._get_current_focus_index()
+        prev_index = (current - 1) % len(self.FOCUS_ORDER)
+        widget = self._get_focus_widget(self.FOCUS_ORDER[prev_index])
+        if widget:
+            widget.focus()
 
     async def action_edit(self) -> None:
         """Edit the currently selected file."""
@@ -214,10 +266,19 @@ class LibrarianApp(App):
         """Run full rescan in background thread."""
         return scan_directory(self.config, full_rescan=True)
 
+    def action_show_path(self) -> None:
+        """Show the full path of the currently selected file."""
+        file_list = self.query_one("#file-list", FileList)
+        file_path = file_list.get_selected_file()
+        if file_path:
+            self.notify(str(file_path), timeout=10)
+        else:
+            self.notify("No file selected", severity="warning")
+
     def action_help(self) -> None:
         """Show help information."""
         self.notify(
-            "q=Quit, e=Edit, r=Refresh, Tab=Next, Arrow keys=Navigate",
+            "q=Quit, e=Edit, p=Path, r=Refresh, Tab=Next, Arrow keys=Navigate",
             timeout=5,
         )
 
