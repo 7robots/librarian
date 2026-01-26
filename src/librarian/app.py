@@ -2,6 +2,7 @@
 
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 
 from textual.app import App, ComposeResult
@@ -11,7 +12,9 @@ from textual.widgets import Footer, Header, Static
 from textual.worker import Worker, get_current_worker
 
 from .config import Config
-from .database import get_all_tags, get_files_by_tag, init_database
+from .database import get_all_tags, get_files_by_tag, init_database, resolve_wiki_link
+from .export import export_markdown
+from .navigation import NavigationStack, NavigationState
 from .scanner import scan_directory
 from .watcher import FileWatcher
 from .widgets import FileList, Preview, TagList
@@ -53,12 +56,15 @@ class LibrarianApp(App):
 
     BINDINGS = [
         Binding("q", "quit", "Quit"),
+        Binding("n", "new_file", "New"),
         Binding("e", "edit", "Edit"),
         Binding("r", "refresh", "Refresh"),
         Binding("tab", "focus_next", "Next Panel", show=False),
         Binding("shift+tab", "focus_previous", "Prev Panel", show=False),
         Binding("p", "show_path", "Show Path"),
+        Binding("x", "export", "Export"),
         Binding("?", "help", "Help"),
+        Binding("escape", "go_back", "Back", show=False),
     ]
 
     # Custom focus order: favorites -> files -> preview -> all tags (clockwise)
@@ -73,6 +79,7 @@ class LibrarianApp(App):
         super().__init__()
         self.config = config
         self._watcher: FileWatcher | None = None
+        self._nav_stack = NavigationStack()
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -110,10 +117,16 @@ class LibrarianApp(App):
 
     def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
         """Handle background worker completion."""
+        worker_name = event.worker.name
+
+        if event.state.name == "ERROR":
+            if worker_name == "_export_file":
+                self.notify(f"Export failed: {event.worker.error}", severity="error")
+            return
+
         if event.state.name != "SUCCESS":
             return
 
-        worker_name = event.worker.name
         if worker_name in ("_background_scan", "_background_full_rescan"):
             result = event.worker.result
             if result:
@@ -132,6 +145,12 @@ class LibrarianApp(App):
                     file_paths = [f[0] for f in files]
                     file_list = self.query_one("#file-list", FileList)
                     file_list.update_files(file_paths, selected_tag)
+
+        elif worker_name == "_export_file":
+            result = event.worker.result
+            if result:
+                output_path, fmt = result
+                self.notify(f"Exported to {output_path.name} ({fmt.upper()})", timeout=5)
 
     async def on_unmount(self) -> None:
         """Clean up when app closes."""
@@ -168,6 +187,9 @@ class LibrarianApp(App):
 
     async def on_tag_list_tag_selected(self, event: TagList.TagSelected) -> None:
         """Handle tag selection."""
+        # Clear navigation history when selecting a new tag
+        self._nav_stack.clear()
+
         files = get_files_by_tag(event.tag_name)
         file_paths = [f[0] for f in files]
         file_list = self.query_one("#file-list", FileList)
@@ -236,13 +258,41 @@ class LibrarianApp(App):
             widget.focus()
 
     async def action_edit(self) -> None:
-        """Edit the currently selected file."""
-        file_list = self.query_one("#file-list", FileList)
-        file_path = file_list.get_selected_file()
+        """Edit the currently previewed file."""
+        # Use the preview's current file (works in both normal and navigation mode)
+        preview = self.query_one("#preview", Preview)
+        file_path = preview.get_current_file()
         if file_path:
             await self._edit_file(file_path)
         else:
             self.notify("No file selected", severity="warning")
+
+    async def action_new_file(self) -> None:
+        """Create a new markdown file with template."""
+        # Get current tag from file list (if any)
+        file_list = self.query_one("#file-list", FileList)
+        tag, _, _ = file_list.get_navigation_info()
+
+        # Generate default filename with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        filename = f"new-note-{timestamp}.md"
+        file_path = self.config.scan_directory / filename
+
+        # Create template content
+        lines = ["# Title", ""]
+        if tag:
+            lines.append(f"#{tag}")
+            lines.append("")
+        content = "\n".join(lines)
+
+        # Write template to file
+        file_path.write_text(content, encoding="utf-8")
+
+        # Open in editor
+        await self._edit_file(file_path)
+
+        # Trigger a rescan to pick up the new file
+        self.run_worker(self._background_full_rescan, exclusive=True, thread=True)
 
     async def _edit_file(self, file_path: Path) -> None:
         """Open a file in the configured editor."""
@@ -275,12 +325,106 @@ class LibrarianApp(App):
         else:
             self.notify("No file selected", severity="warning")
 
+    def action_export(self) -> None:
+        """Export the currently previewed file to PDF or HTML."""
+        preview = self.query_one("#preview", Preview)
+        file_path = preview.get_current_file()
+
+        if not file_path:
+            self.notify("No file to export", severity="warning")
+            return
+
+        # Run export in background worker
+        self.notify(f"Exporting {file_path.name}...")
+        self.run_worker(
+            lambda: export_markdown(file_path, self.config.export_directory),
+            name="_export_file",
+            thread=True,
+        )
+
+    def _on_export_complete(self, output_path: Path, fmt: str) -> None:
+        """Handle export completion."""
+        self.notify(f"Exported to {output_path.name} ({fmt.upper()})", timeout=5)
+
     def action_help(self) -> None:
         """Show help information."""
         self.notify(
-            "q=Quit, e=Edit, p=Path, r=Refresh, Tab=Next, Arrow keys=Navigate",
+            "n=New, e=Edit, x=Export, p=Path, r=Refresh, Esc=Back, q=Quit",
             timeout=5,
         )
+
+    async def on_preview_wiki_link_clicked(
+        self, event: Preview.WikiLinkClicked
+    ) -> None:
+        """Handle wiki link clicks in the preview."""
+        # Resolve the wiki link target to a file path
+        resolved = resolve_wiki_link(event.target, event.current_file)
+
+        if resolved is None:
+            self.notify(f"Link target not found: {event.target}", severity="warning")
+            return
+
+        # Save current state to navigation stack
+        file_list = self.query_one("#file-list", FileList)
+        tag, files, index = file_list.get_navigation_info()
+        header_text = file_list.get_header_text()
+        state = NavigationState(
+            tag=tag,
+            files=files,
+            selected_index=index,
+            header_text=header_text,
+        )
+        self._nav_stack.push(state)
+
+        # Update file list to show single navigated file
+        file_list.update_files([resolved], navigation_target=resolved.name)
+
+        # Update preview
+        preview = self.query_one("#preview", Preview)
+        await preview.show_file(resolved)
+
+        # Focus the file list and activate cursor
+        def activate_file_list():
+            file_list.list_view.focus()
+            # Force cursor activation by moving down then back up
+            if len(file_list._files) > 1:
+                file_list.list_view.action_cursor_down()
+                file_list.list_view.action_cursor_up()
+
+        self.set_timer(0.1, activate_file_list)
+
+    async def action_go_back(self) -> None:
+        """Go back in navigation history."""
+        if self._nav_stack.is_empty():
+            return
+
+        state = self._nav_stack.pop()
+        if state is None:
+            return
+
+        # Restore file list state
+        file_list = self.query_one("#file-list", FileList)
+        file_list.restore_state(
+            files=state.files,
+            tag=state.tag,
+            selected_index=state.selected_index,
+            header_text=state.header_text,
+        )
+
+        # Update preview with the restored selection
+        if state.files and 0 <= state.selected_index < len(state.files):
+            preview = self.query_one("#preview", Preview)
+            await preview.show_file(state.files[state.selected_index])
+
+        # Focus the file list and activate cursor
+        def activate_file_list():
+            file_list.list_view.focus()
+            # Force cursor activation by moving down then back up
+            if len(state.files) > 1:
+                file_list.list_view.action_cursor_down()
+                file_list.list_view.action_cursor_up()
+
+        self.set_timer(0.1, activate_file_list)
 
 
 def run_app(config: Config) -> None:

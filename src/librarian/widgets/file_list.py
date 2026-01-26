@@ -71,6 +71,7 @@ class FileList(Vertical):
         super().__init__(**kwargs)
         self._files: list[Path] = []
         self._current_tag: str | None = None
+        self._navigation_target: str | None = None
 
     def compose(self) -> ComposeResult:
         yield Static("FILES", id="file-header")
@@ -80,16 +81,30 @@ class FileList(Vertical):
     def list_view(self) -> ListView:
         return self.query_one("#file-list-view", ListView)
 
-    def update_files(self, files: list[Path], tag: str | None = None) -> None:
-        """Update the list of files."""
+    def update_files(
+        self,
+        files: list[Path],
+        tag: str | None = None,
+        navigation_target: str | None = None,
+    ) -> None:
+        """Update the list of files.
+
+        Args:
+            files: List of file paths to display
+            tag: Current tag filter (used for header display)
+            navigation_target: Wiki link target being navigated to (navigation mode)
+        """
         self._files = files
         self._current_tag = tag
+        self._navigation_target = navigation_target
         list_view = self.list_view
         list_view.clear()
 
         # Update header
         header = self.query_one("#file-header", Static)
-        if tag:
+        if navigation_target:
+            header.update(f"FILES (-> {navigation_target})")
+        elif tag:
             header.update(f"FILES (#{tag})")
         else:
             header.update("FILES")
@@ -115,3 +130,60 @@ class FileList(Vertical):
             if isinstance(item, FileItem):
                 return item.file_path
         return None
+
+    def get_navigation_info(self) -> tuple[str | None, list[Path], int]:
+        """Get current navigation info for state saving.
+
+        Returns:
+            Tuple of (current_tag, files, selected_index)
+        """
+        list_view = self.list_view
+        index = list_view.index if list_view.index is not None else 0
+        return (self._current_tag, self._files.copy(), index)
+
+    def is_navigation_mode(self) -> bool:
+        """Check if currently in wiki link navigation mode."""
+        return self._navigation_target is not None
+
+    def get_header_text(self) -> str:
+        """Get the current header text for state saving."""
+        # Reconstruct from stored state rather than reading from widget
+        if self._navigation_target:
+            return f"FILES (-> {self._navigation_target})"
+        elif self._current_tag:
+            return f"FILES (#{self._current_tag})"
+        else:
+            return "FILES"
+
+    def restore_state(
+        self,
+        files: list[Path],
+        tag: str | None,
+        selected_index: int,
+        header_text: str,
+    ) -> None:
+        """Restore file list to a previous state.
+
+        Args:
+            files: List of files to display
+            tag: Tag filter (or None)
+            selected_index: Index to highlight
+            header_text: Header text to restore
+        """
+        self._files = files
+        self._current_tag = tag
+        self._navigation_target = None
+        list_view = self.list_view
+        list_view.clear()
+
+        # Restore header
+        header = self.query_one("#file-header", Static)
+        header.update(header_text)
+
+        for file_path in files:
+            list_view.append(FileItem(file_path))
+
+        # Restore selection
+        if files and 0 <= selected_index < len(files):
+            list_view.index = selected_index
+            self.post_message(self.FileHighlighted(files[selected_index]))

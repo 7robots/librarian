@@ -36,6 +36,7 @@ class Config:
     scan_directory: Path = field(default_factory=lambda: Path.home() / "Documents")
     editor: str = "vim"
     tags: TagConfig = field(default_factory=TagConfig)
+    export_directory: Path = field(default_factory=lambda: Path.home() / "Downloads")
 
     @classmethod
     def load(cls) -> "Config":
@@ -70,10 +71,15 @@ class Config:
             whitelist=tags_data.get("whitelist", []),
         )
 
+        # Parse export_directory
+        export_dir = data.get("export_directory", "~/Downloads")
+        export_directory = Path(export_dir).expanduser()
+
         return cls(
             scan_directory=scan_directory,
             editor=editor,
             tags=tags,
+            export_directory=export_directory,
         )
 
     def save(self) -> None:
@@ -89,6 +95,9 @@ class Config:
             '',
             '# Editor command for editing files',
             f'editor = "{self.editor}"',
+            '',
+            '# Directory for exported files (PDF/HTML)',
+            f'export_directory = "{self.export_directory}"',
             '',
             '# Tag filtering: "all" or "whitelist"',
             '[tags]',

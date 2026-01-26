@@ -15,10 +15,13 @@ src/librarian/
 ├── database.py          # JSON index operations (in-memory + file persistence)
 ├── scanner.py           # File scanning & hashtag extraction
 ├── watcher.py           # File system watcher using watchdog
+├── wikilink.py          # Wiki link preprocessing and parsing
+├── navigation.py        # Navigation state management for wiki links
+├── export.py            # Export to PDF/HTML functionality
 └── widgets/
     ├── __init__.py
     ├── tag_list.py      # Split panel: Favorites + All Tags (two ListViews)
-    ├── file_list.py     # Files with selected tag (ListView)
+    ├── file_list.py     # Files with selected tag (ListView + navigation mode)
     └── preview.py       # Markdown preview pane (VerticalScroll + Markdown)
 ```
 
@@ -30,6 +33,8 @@ src/librarian/
 - **Tag format**: Inline hashtags matching `#[a-zA-Z][a-zA-Z0-9_-]*`
 - **Auto-refresh**: watchdog monitors scan directory with debouncing
 - **Favorites**: Tags in config whitelist appear in dedicated Favorites panel
+- **Wiki links**: `[[note.md]]` or `[[note|display text]]` syntax, preprocessed to `wikilink:` scheme
+- **Export**: PDF (via weasyprint) or HTML export with configurable output directory
 
 ## Index Schema
 
@@ -110,6 +115,9 @@ Key bindings:
 - `e` - Edit selected file (only way to open editor)
 - `p` - Show full path of selected file
 - `r` - Refresh/rescan files
+- `n` - Create new markdown file with current tag
+- `x` - Export current file to PDF/HTML
+- `Escape` - Navigate back from wiki link
 - `?` - Show help
 
 ## CSS Layout Notes
@@ -133,6 +141,7 @@ class Config:
     scan_directory: Path
     editor: str
     tags: TagConfig
+    export_directory: Path  # Default: ~/Downloads
 ```
 
 ## Performance Features
@@ -157,3 +166,93 @@ with batch_writes():
 - `textual>=0.47.0` - TUI framework
 - `watchdog>=4.0.0` - File system monitoring
 - `rich` - Markdown rendering (included with textual)
+- `markdown>=3.7` - Markdown to HTML conversion for export
+- `weasyprint` - Optional, for PDF export (requires system dependencies)
+
+## Wiki Link Navigation
+
+Librarian supports wiki-style links for navigating between markdown files:
+
+### Syntax
+- `[[filename.md]]` - Link to a file by name, displays the filename
+- `[[filename|Display Text]]` - Link with custom display text
+- Filenames can have spaces: `[[my notes.md]]`
+
+### Implementation
+1. **Preprocessing**: `wikilink.py` converts wiki links to markdown links with custom `wikilink:` scheme
+   - `[[note.md]]` becomes `[note.md](wikilink:note.md)`
+   - `[[note|Text]]` becomes `[Text](wikilink:note)`
+   - URL-encodes targets to handle spaces and special characters
+
+2. **Link Resolution**: `database.py` provides `resolve_wiki_link()` to find files
+   - Searches by exact filename match in the index
+   - Returns `Path | None`
+
+3. **Click Handling**: `preview.py` intercepts link clicks in markdown preview
+   - Detects `wikilink:` scheme URLs
+   - Extracts and resolves target filename
+   - Posts message to app to navigate to the file
+
+4. **Navigation Stack**: `navigation.py` manages back navigation
+   - `NavigationState` stores file list state (tag, files, selected index, header)
+   - `NavigationStack` provides push/pop operations
+   - App stores stack instance and handles Escape key to go back
+
+5. **Navigation Mode**: `file_list.py` supports two modes
+   - Normal mode: Shows files for selected tag
+   - Navigation mode: Shows single file from wiki link
+   - Header text indicates mode ("FILES" vs "BACK: filename")
+
+### User Experience
+- Click a wiki link in the preview panel to navigate to that file
+- Press `Escape` to return to the previous view (tag/file list)
+- Navigation preserves the entire state: selected tag, file list, cursor position
+
+## File Creation
+
+Press `n` to create a new markdown file in the scan directory.
+
+### Behavior
+- Opens a text input modal with suggested filename based on current tag
+- Suggested format: `new-note-tagname.md` (or `new-note.md` if no tag selected)
+- Creates file with template content including the current tag
+- Opens the new file in the configured editor automatically
+
+### Template Structure
+```markdown
+# Title
+
+#current-tag
+
+Content here...
+```
+
+## Export to PDF/HTML
+
+Press `x` to export the currently selected file to PDF or HTML.
+
+### Formats
+- **PDF**: Requires `weasyprint` package and system dependencies
+  - Install with: `uv pip install 'librarian[pdf]'`
+  - Automatically falls back to HTML if not available
+- **HTML**: Always available, standalone file with embedded CSS
+
+### Export Styling
+The `export.py` module includes clean, professional CSS:
+- System fonts with good fallbacks
+- GitHub-style markdown rendering
+- Syntax highlighting support
+- Responsive layout (800px max width)
+- Print-friendly for PDF output
+
+### Configuration
+Set export destination in config.toml:
+```toml
+export_directory = "~/Downloads"  # or any other directory
+```
+
+### User Experience
+- Press `x` on any file in the file list
+- App shows notification with export path
+- Files are named `{original-stem}.pdf` or `{original-stem}.html`
+- Existing files are overwritten
