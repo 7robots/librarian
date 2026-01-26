@@ -94,30 +94,75 @@ class TagList(Vertical):
         self._favorites = [f.lower() for f in favorites]
 
     def update_tags(self, tags: list[tuple[str, int]]) -> None:
-        """Update the list of tags."""
+        """Update the list of tags with incremental updates."""
+        # Save currently selected tag to restore after update
+        selected_tag = self.get_selected_tag()
+
         self._all_tags = tags
 
         # Build favorites list from tags that match whitelist
         favorites_lower = set(self._favorites)
         favorite_tags = [(name, count) for name, count in tags if name.lower() in favorites_lower]
 
-        # Update favorites list
+        # Update favorites list incrementally
         fav_list = self.favorites_list_view
-        fav_list.clear()
-        for tag_name, count in favorite_tags:
-            fav_list.append(TagItem(tag_name, count))
+        self._update_list_view(fav_list, favorite_tags)
 
-        # Update all tags list
+        # Update all tags list incrementally
         all_list = self.all_tags_list_view
-        all_list.clear()
-        for tag_name, count in tags:
-            all_list.append(TagItem(tag_name, count))
+        self._update_list_view(all_list, tags)
 
-        # Highlight first item in favorites if available, otherwise all tags
-        if favorite_tags:
+        # Restore selection if the tag still exists
+        if selected_tag:
+            self._restore_selection(selected_tag)
+        elif favorite_tags:
             fav_list.index = 0
         elif tags:
             all_list.index = 0
+
+    def _update_list_view(
+        self, list_view: ListView, new_tags: list[tuple[str, int]]
+    ) -> None:
+        """Update a ListView incrementally, only changing what's different."""
+        new_tags_dict = {name: count for name, count in new_tags}
+        existing_items = list(list_view.children)
+        existing_tags = {
+            item.tag_name: item for item in existing_items if isinstance(item, TagItem)
+        }
+
+        # Check if we can do an incremental update (same tags, possibly different counts)
+        # If the set of tags changed, do a full rebuild for simplicity
+        if set(new_tags_dict.keys()) != set(existing_tags.keys()):
+            # Full rebuild needed - tags added or removed
+            list_view.clear()
+            for tag_name, count in new_tags:
+                list_view.append(TagItem(tag_name, count))
+            return
+
+        # Incremental update - only update counts that changed
+        for tag_name, new_count in new_tags_dict.items():
+            item = existing_tags.get(tag_name)
+            if item and item.count != new_count:
+                # Update the count by replacing the label
+                item.count = new_count
+                label = item.query_one(Label)
+                label.update(f"#{tag_name} ({new_count})")
+
+    def _restore_selection(self, tag_name: str) -> None:
+        """Restore selection to a specific tag if it exists."""
+        # Try favorites first
+        fav_list = self.favorites_list_view
+        for i, item in enumerate(fav_list.children):
+            if isinstance(item, TagItem) and item.tag_name == tag_name:
+                fav_list.index = i
+                return
+
+        # Try all tags
+        all_list = self.all_tags_list_view
+        for i, item in enumerate(all_list.children):
+            if isinstance(item, TagItem) and item.tag_name == tag_name:
+                all_list.index = i
+                return
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         """Handle tag selection from either list."""

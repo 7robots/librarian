@@ -8,9 +8,10 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Footer, Header, Static
+from textual.worker import Worker, get_current_worker
 
 from .config import Config
-from .database import get_all_tags, get_files_by_tag
+from .database import get_all_tags, get_files_by_tag, init_database
 from .scanner import scan_directory
 from .watcher import FileWatcher
 from .widgets import FileList, Preview, TagList
@@ -75,17 +76,9 @@ class LibrarianApp(App):
 
     async def on_mount(self) -> None:
         """Initialize the app after mounting."""
-        # Initial scan
-        self.notify("Scanning for markdown files...")
-        added, updated, removed = scan_directory(self.config)
-        self.notify(f"Index updated: {added} added, {updated} updated, {removed} removed")
-
-        # Load tags
+        # Load existing index immediately for fast startup
+        init_database()
         self._refresh_tags()
-
-        # Start file watcher
-        self._watcher = FileWatcher(self.config, self._on_file_change)
-        self._watcher.start()
 
         # Focus the appropriate tag list initially
         tag_list = self.query_one("#tag-list", TagList)
@@ -93,6 +86,43 @@ class LibrarianApp(App):
             tag_list.favorites_list_view.focus()
         else:
             tag_list.all_tags_list_view.focus()
+
+        # Start file watcher
+        self._watcher = FileWatcher(self.config, self._on_file_change)
+        self._watcher.start()
+
+        # Run initial scan in background worker (thread=True for sync function)
+        self.notify("Scanning for markdown files...")
+        self.run_worker(self._background_scan, exclusive=True, thread=True)
+
+    def _background_scan(self) -> tuple[int, int, int]:
+        """Run directory scan in background thread."""
+        return scan_directory(self.config)
+
+    def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
+        """Handle background worker completion."""
+        if event.state.name != "SUCCESS":
+            return
+
+        worker_name = event.worker.name
+        if worker_name in ("_background_scan", "_background_full_rescan"):
+            result = event.worker.result
+            if result:
+                added, updated, removed = result
+                if worker_name == "_background_full_rescan":
+                    self.notify(f"Rescan complete: {added} added, {updated} updated, {removed} removed")
+                else:
+                    self.notify(f"Index updated: {added} added, {updated} updated, {removed} removed")
+                self._refresh_tags()
+
+                # Refresh current file list if a tag is selected
+                tag_list = self.query_one("#tag-list", TagList)
+                selected_tag = tag_list.get_selected_tag()
+                if selected_tag:
+                    files = get_files_by_tag(selected_tag)
+                    file_paths = [f[0] for f in files]
+                    file_list = self.query_one("#file-list", FileList)
+                    file_list.update_files(file_paths, selected_tag)
 
     async def on_unmount(self) -> None:
         """Clean up when app closes."""
@@ -178,19 +208,11 @@ class LibrarianApp(App):
     async def action_refresh(self) -> None:
         """Manually refresh the index."""
         self.notify("Rescanning...")
-        added, updated, removed = scan_directory(self.config, full_rescan=True)
-        self._refresh_tags()
+        self.run_worker(self._background_full_rescan, exclusive=True, thread=True)
 
-        # Refresh current file list
-        tag_list = self.query_one("#tag-list", TagList)
-        selected_tag = tag_list.get_selected_tag()
-        if selected_tag:
-            files = get_files_by_tag(selected_tag)
-            file_paths = [f[0] for f in files]
-            file_list = self.query_one("#file-list", FileList)
-            file_list.update_files(file_paths, selected_tag)
-
-        self.notify(f"Rescan complete: {added} added, {updated} updated, {removed} removed")
+    def _background_full_rescan(self) -> tuple[int, int, int]:
+        """Run full rescan in background thread."""
+        return scan_directory(self.config, full_rescan=True)
 
     def action_help(self) -> None:
         """Show help information."""

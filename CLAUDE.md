@@ -119,6 +119,23 @@ class Config:
     tags: TagConfig
 ```
 
+## Performance Features
+
+- **Background scanning**: Initial scan runs in background worker, UI loads immediately with cached index
+- **Batched writes**: `batch_writes()` context manager defers JSON saves until batch completes
+- **Incremental UI updates**: Tag list updates only changed items, preserves cursor position
+- **File content cache**: LRU cache (10 files) for preview with mtime-based invalidation
+
+### Using batch writes
+```python
+from librarian.database import batch_writes, add_file
+
+with batch_writes():
+    for path in files:
+        add_file(path, mtime, tags)  # No disk I/O until context exits
+# Single write happens here
+```
+
 ## Dependencies
 
 - `textual>=0.47.0` - TUI framework

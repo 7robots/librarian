@@ -3,8 +3,9 @@
 import json
 import os
 from collections import defaultdict
+from contextlib import contextmanager
 from pathlib import Path
-from typing import TypedDict
+from typing import Generator, TypedDict
 
 from .config import get_index_path
 
@@ -18,6 +19,10 @@ class FileEntry(TypedDict):
 
 # In-memory index cache
 _index: dict[str, FileEntry] = {}
+
+# Batch mode: when True, defer saves until batch ends
+_batch_mode: bool = False
+_batch_dirty: bool = False
 
 
 def _load_index() -> dict[str, FileEntry]:
@@ -35,12 +40,43 @@ def _load_index() -> dict[str, FileEntry]:
 
 def _save_index() -> None:
     """Save index to JSON file with atomic write."""
+    global _batch_dirty
+
+    # In batch mode, just mark dirty and defer the save
+    if _batch_mode:
+        _batch_dirty = True
+        return
+
     index_path = get_index_path()
     index_path.parent.mkdir(parents=True, exist_ok=True)
 
     temp_path = index_path.with_suffix(".json.tmp")
     temp_path.write_text(json.dumps({"files": _index}, indent=2))
     os.replace(temp_path, index_path)
+
+
+@contextmanager
+def batch_writes() -> Generator[None, None, None]:
+    """Context manager for batching database writes.
+
+    All add_file() and remove_file() calls within this context
+    will be batched and written to disk only once at the end.
+    """
+    global _batch_mode, _batch_dirty
+    _batch_mode = True
+    _batch_dirty = False
+    try:
+        yield
+    finally:
+        _batch_mode = False
+        if _batch_dirty:
+            _batch_dirty = False
+            # Force save now
+            index_path = get_index_path()
+            index_path.parent.mkdir(parents=True, exist_ok=True)
+            temp_path = index_path.with_suffix(".json.tmp")
+            temp_path.write_text(json.dumps({"files": _index}, indent=2))
+            os.replace(temp_path, index_path)
 
 
 def init_database() -> None:

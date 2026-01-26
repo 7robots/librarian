@@ -10,6 +10,7 @@ from watchdog.observers import Observer
 
 from .config import Config
 from .scanner import rescan_file
+from .widgets.preview import invalidate_file_cache
 
 
 class MarkdownEventHandler(FileSystemEventHandler):
@@ -63,6 +64,8 @@ class MarkdownEventHandler(FileSystemEventHandler):
         # Process each changed file
         for path_str in paths:
             path = Path(path_str)
+            # Invalidate preview cache for this file
+            invalidate_file_cache(path)
             rescan_file(path, self.config)
 
         # Notify of changes

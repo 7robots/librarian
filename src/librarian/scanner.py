@@ -6,6 +6,7 @@ from pathlib import Path
 from .config import Config
 from .database import (
     add_file,
+    batch_writes,
     get_all_files,
     get_file_mtime,
     init_database,
@@ -91,32 +92,34 @@ def scan_directory(config: Config, full_rescan: bool = False) -> tuple[int, int,
     updated = 0
     removed = 0
 
-    # Remove files that no longer exist
-    for path in indexed_files:
-        if str(path) not in current_paths:
-            remove_file(path)
-            removed += 1
-
-    # Add or update files
-    for path in markdown_files:
-        mtime = path.stat().st_mtime
-
-        if str(path) not in indexed_paths:
-            # New file
-            tags = scan_file(path, config)
-            if tags:  # Only index files with tags
-                add_file(path, mtime, tags)
-                added += 1
-        elif full_rescan or get_file_mtime(path) != mtime:
-            # Modified file
-            tags = scan_file(path, config)
-            if tags:
-                add_file(path, mtime, tags)
-                updated += 1
-            else:
-                # File no longer has tags, remove it
+    # Batch all writes to save only once at the end
+    with batch_writes():
+        # Remove files that no longer exist
+        for path in indexed_files:
+            if str(path) not in current_paths:
                 remove_file(path)
                 removed += 1
+
+        # Add or update files
+        for path in markdown_files:
+            mtime = path.stat().st_mtime
+
+            if str(path) not in indexed_paths:
+                # New file
+                tags = scan_file(path, config)
+                if tags:  # Only index files with tags
+                    add_file(path, mtime, tags)
+                    added += 1
+            elif full_rescan or get_file_mtime(path) != mtime:
+                # Modified file
+                tags = scan_file(path, config)
+                if tags:
+                    add_file(path, mtime, tags)
+                    updated += 1
+                else:
+                    # File no longer has tags, remove it
+                    remove_file(path)
+                    removed += 1
 
     # Clean up orphaned tags
     cleanup_orphaned_tags()
