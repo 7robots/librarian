@@ -125,8 +125,8 @@ def get_files_by_tag(tag_name: str) -> list[tuple[Path, float]]:
         if tag_name in entry["tags"]:
             result.append((Path(path_str), entry["mtime"]))
 
-    # Sort by path
-    result.sort(key=lambda x: str(x[0]))
+    # Sort by mtime descending (most recently modified first)
+    result.sort(key=lambda x: x[1], reverse=True)
     return result
 
 
