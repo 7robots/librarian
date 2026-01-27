@@ -70,15 +70,6 @@ class TagList(Vertical):
     TagList #favorites-section {
         background: $primary-background-darken-1;
     }
-
-    TagList #favorites-list-view ListItem {
-        color: $warning-lighten-1;
-    }
-
-    TagList #favorites-list-view ListItem.--highlight {
-        background: $warning-darken-2;
-        color: $text;
-    }
     """
 
     class TagSelected(Message):
