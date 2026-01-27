@@ -207,6 +207,10 @@ class LibrarianApp(App):
         self, event: FileList.FileHighlighted
     ) -> None:
         """Handle file highlight (cursor moved) - update preview."""
+        # Ignore stale events for files no longer in the list
+        file_list = self.query_one("#file-list", FileList)
+        if event.file_path not in file_list._files:
+            return
         preview = self.query_one("#preview", Preview)
         await preview.show_file(event.file_path)
 

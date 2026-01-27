@@ -170,4 +170,5 @@ class Preview(Vertical):
             target = extract_wiki_target(href)
             self.post_message(self.WikiLinkClicked(target, self._current_file))
             event.prevent_default()
+            event.stop()
         # For non-wiki links, let default behavior handle (or ignore since open_links=False)
