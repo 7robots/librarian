@@ -8,6 +8,7 @@ from pathlib import Path
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
+from textual.timer import Timer
 from textual.widgets import Footer, Header, Static
 from textual.worker import Worker, get_current_worker
 
@@ -17,7 +18,7 @@ from .export import export_markdown
 from .navigation import NavigationStack, NavigationState
 from .scanner import scan_directory
 from .watcher import FileWatcher
-from .widgets import FileList, Preview, TagList
+from .widgets import FileList, Preview, TagList, load_file_content
 
 
 class LibrarianApp(App):
@@ -80,6 +81,8 @@ class LibrarianApp(App):
         self.config = config
         self._watcher: FileWatcher | None = None
         self._nav_stack = NavigationStack()
+        self._preview_timer: Timer | None = None  # For debouncing preview updates
+        self._pending_preview_path: Path | None = None  # Track which file is being loaded
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -152,6 +155,28 @@ class LibrarianApp(App):
                 output_path, fmt = result
                 self.notify(f"Exported to {output_path.name} ({fmt.upper()})", timeout=5)
 
+        elif worker_name == "_load_preview":
+            # Preview content loaded in background thread
+            file_path = self._pending_preview_path
+            self._pending_preview_path = None
+
+            if file_path is None:
+                return
+
+            # Verify this file is still the one we want to display
+            file_list = self.query_one("#file-list", FileList)
+            if file_path not in file_list._files:
+                return
+
+            result = event.worker.result
+            if result:
+                content, error = result
+                # Update preview on main thread (no I/O, just widget update)
+                preview = self.query_one("#preview", Preview)
+                self.call_later(
+                    lambda: preview.show_content(file_path, content, error)
+                )
+
     async def on_unmount(self) -> None:
         """Clean up when app closes."""
         if self._watcher:
@@ -206,13 +231,51 @@ class LibrarianApp(App):
     async def on_file_list_file_highlighted(
         self, event: FileList.FileHighlighted
     ) -> None:
-        """Handle file highlight (cursor moved) - update preview."""
+        """Handle file highlight (cursor moved) - update preview with debouncing."""
+        # Cancel any pending preview update
+        if self._preview_timer is not None:
+            self._preview_timer.stop()
+            self._preview_timer = None
+
         # Ignore stale events for files no longer in the list
         file_list = self.query_one("#file-list", FileList)
         if event.file_path not in file_list._files:
             return
+
+        # Capture the file path for the closure
+        file_path = event.file_path
+
+        # Debounce: wait 50ms before updating preview
+        # This prevents lag when scrolling quickly through the file list
+        self._preview_timer = self.set_timer(
+            0.05,
+            lambda: self._do_preview_update(file_path),
+        )
+
+    def _do_preview_update(self, file_path: Path) -> None:
+        """Actually update the preview after debounce delay."""
+        self._preview_timer = None
+
+        # Verify the file is still in the list before starting work
+        file_list = self.query_one("#file-list", FileList)
+        if file_path not in file_list._files:
+            return
+
+        # Update header immediately for visual feedback
         preview = self.query_one("#preview", Preview)
-        await preview.show_file(event.file_path)
+        preview.query_one("#preview-header", Static).update(
+            f"PREVIEW - {file_path.name}"
+        )
+
+        # Load file content in background thread to avoid blocking UI
+        self.run_worker(
+            lambda: load_file_content(file_path),
+            name="_load_preview",
+            thread=True,
+            group="preview",
+        )
+        # Store the file path so we can check it when the worker completes
+        self._pending_preview_path = file_path
 
     def _get_focus_widget(self, widget_id: str):
         """Get a focusable widget by ID."""

@@ -69,6 +69,36 @@ def invalidate_file_cache(path: Path) -> None:
     _file_cache.invalidate(path)
 
 
+def load_file_content(file_path: Path) -> tuple[str | None, str | None]:
+    """Load file content for preview (can be called from worker thread).
+
+    Handles cache lookup, file reading, and wiki link preprocessing.
+
+    Args:
+        file_path: Path to the markdown file to load
+
+    Returns:
+        Tuple of (processed_content, error_message).
+        If successful, error_message is None.
+        If failed, processed_content is None and error_message contains the error.
+    """
+    # Try to get from cache first (includes mtime check via stat)
+    content = _file_cache.get(file_path)
+    if content is not None:
+        processed_content = preprocess_wiki_links(content)
+        return (processed_content, None)
+
+    # Read from disk and cache
+    try:
+        mtime = file_path.stat().st_mtime
+        content = file_path.read_text(encoding="utf-8")
+        _file_cache.put(file_path, mtime, content)
+        processed_content = preprocess_wiki_links(content)
+        return (processed_content, None)
+    except (OSError, UnicodeDecodeError) as e:
+        return (None, f"*Error reading file: {e}*")
+
+
 class Preview(Vertical):
     """Widget displaying a markdown file preview."""
 
@@ -125,7 +155,11 @@ class Preview(Vertical):
         return self.query_one("#preview-content", Markdown)
 
     async def show_file(self, file_path: Path | None) -> None:
-        """Display the contents of a markdown file."""
+        """Display the contents of a markdown file.
+
+        This method does file I/O synchronously. For non-blocking loads,
+        use load_file_content() in a worker thread, then call show_content().
+        """
         self._current_file = file_path
 
         header = self.query_one("#preview-header", Static)
@@ -138,24 +172,34 @@ class Preview(Vertical):
 
         header.update(f"PREVIEW - {file_path.name}")
 
-        # Try to get from cache first
-        content = _file_cache.get(file_path)
-        if content is not None:
-            # Preprocess wiki links before rendering
-            processed_content = preprocess_wiki_links(content)
-            await markdown.update(processed_content)
-            return
+        # Load content (blocking I/O)
+        content, error = load_file_content(file_path)
+        if error:
+            await markdown.update(error)
+        else:
+            await markdown.update(content)
 
-        # Read from disk and cache
-        try:
-            mtime = file_path.stat().st_mtime
-            content = file_path.read_text(encoding="utf-8")
-            _file_cache.put(file_path, mtime, content)
-            # Preprocess wiki links before rendering
-            processed_content = preprocess_wiki_links(content)
-            await markdown.update(processed_content)
-        except (OSError, UnicodeDecodeError) as e:
-            await markdown.update(f"*Error reading file: {e}*")
+    async def show_content(
+        self, file_path: Path, content: str | None, error: str | None
+    ) -> None:
+        """Display pre-loaded content (no I/O, safe for main thread).
+
+        Args:
+            file_path: The file being displayed (for header and tracking)
+            content: Pre-processed markdown content, or None if error
+            error: Error message to display, or None if successful
+        """
+        self._current_file = file_path
+
+        header = self.query_one("#preview-header", Static)
+        markdown = self.markdown_widget
+
+        header.update(f"PREVIEW - {file_path.name}")
+
+        if error:
+            await markdown.update(error)
+        else:
+            await markdown.update(content or "")
 
     def get_current_file(self) -> Path | None:
         """Get the currently displayed file path."""
