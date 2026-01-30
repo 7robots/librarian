@@ -64,6 +64,8 @@ class FileInfoModal(ModalScreen):
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel", show=False),
+        Binding("tab", "focus_next", "Next field", show=False),
+        Binding("shift+tab", "focus_previous", "Previous field", show=False),
     ]
 
     CSS = """
@@ -74,7 +76,7 @@ class FileInfoModal(ModalScreen):
     #file-info-container {
         width: 70;
         height: auto;
-        max-height: 30;
+        max-height: 40;
         background: $surface;
         border: solid $primary;
         padding: 1 2;
@@ -139,12 +141,14 @@ class FileInfoModal(ModalScreen):
     #button-row {
         margin-top: 2;
         height: 3;
+        min-height: 3;
         align: center middle;
     }
 
     #button-row Button {
         margin: 0 1;
         min-width: 12;
+        height: 3;
     }
 
     #rename-btn {
@@ -180,6 +184,7 @@ class FileInfoModal(ModalScreen):
         super().__init__()
         self.file_path = file_path
         self._completion_visible = False
+        self._applying_completion = False  # Prevent re-triggering on programmatic changes
 
     def compose(self) -> ComposeResult:
         with Vertical(id="file-info-container"):
@@ -197,14 +202,14 @@ class FileInfoModal(ModalScreen):
                 )
 
             with Vertical(id="move-section"):
-                yield Label("Move to (directory path, Tab to complete):", classes="info-label")
+                yield Label("Move to directory:", classes="info-label")
                 with Horizontal(classes="input-row"):
                     yield Input(
                         value=str(self.file_path.parent),
                         id="move-input",
                         placeholder="Enter destination directory",
                     )
-                yield Static("Tab: complete, ↑↓: select, Enter: confirm", id="completion-hint")
+                yield Static("↓: show/select completions, Enter: confirm", id="completion-hint")
                 yield OptionList(id="completion-list")
 
             with Horizontal(id="button-row"):
@@ -215,6 +220,14 @@ class FileInfoModal(ModalScreen):
     def on_mount(self) -> None:
         """Focus the rename input on mount."""
         self.query_one("#rename-input", Input).focus()
+
+    def action_focus_next(self) -> None:
+        """Move focus to next widget."""
+        self.focus_next()
+
+    def action_focus_previous(self) -> None:
+        """Move focus to previous widget."""
+        self.focus_previous()
 
     def action_cancel(self) -> None:
         """Cancel and close the modal."""
@@ -242,43 +255,68 @@ class FileInfoModal(ModalScreen):
             else:
                 self._do_move()
 
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Auto-show completions as user types in move input (fish-style)."""
+        if event.input.id != "move-input":
+            return
+        if self._applying_completion:
+            return
+
+        current_value = event.value
+        if not current_value:
+            self._hide_completions()
+            return
+
+        completions = get_directory_completions(current_value)
+        completion_list = self.query_one("#completion-list", OptionList)
+        completion_list.clear_options()
+
+        if not completions:
+            self._hide_completions()
+            return
+
+        # Show completions inline (don't auto-apply single match while typing)
+        for path in completions:
+            completion_list.add_option(Option(str(path)))
+
+        completion_list.add_class("visible")
+        completion_list.highlighted = 0
+        self._completion_visible = True
+
     def on_key(self, event) -> None:
-        """Handle key events for tab completion."""
+        """Handle key events for completion navigation."""
         move_input = self.query_one("#move-input", Input)
         completion_list = self.query_one("#completion-list", OptionList)
 
-        # Only handle keys when move input is focused or completion list is focused
+        # Only handle keys when move input or completion list is focused
         if self.focused not in (move_input, completion_list):
             return
 
-        if event.key == "tab":
-            event.stop()
-            event.prevent_default()
+        # Down arrow: show completions or navigate into list
+        if event.key == "down":
             if self._completion_visible:
-                # Tab cycles through completions or selects single match
-                if completion_list.option_count == 1:
-                    self._select_current_completion()
-                else:
-                    # Move to next completion
-                    if completion_list.highlighted is not None:
-                        next_idx = (completion_list.highlighted + 1) % completion_list.option_count
-                        completion_list.highlighted = next_idx
-                    completion_list.focus()
-            else:
+                event.stop()
+                event.prevent_default()
+                completion_list.focus()
+                if completion_list.highlighted is None and completion_list.option_count > 0:
+                    completion_list.highlighted = 0
+            elif self.focused == move_input:
+                # Show completions on down arrow from input
+                event.stop()
+                event.prevent_default()
                 self._show_completions()
 
-        elif event.key == "down" and self._completion_visible:
-            event.stop()
-            event.prevent_default()
-            completion_list.focus()
-            if completion_list.highlighted is None and completion_list.option_count > 0:
-                completion_list.highlighted = 0
-
+        # Up arrow: navigate completion list
         elif event.key == "up" and self._completion_visible:
             event.stop()
             event.prevent_default()
-            completion_list.focus()
+            if self.focused == completion_list:
+                # If at top of list, go back to input
+                if completion_list.highlighted == 0:
+                    move_input.focus()
+                # else let default up behavior work
 
+        # Escape: hide completions
         elif event.key == "escape" and self._completion_visible:
             event.stop()
             event.prevent_default()
@@ -291,7 +329,7 @@ class FileInfoModal(ModalScreen):
             self._apply_completion(str(event.option.prompt))
 
     def _show_completions(self) -> None:
-        """Show directory completions for current input."""
+        """Show directory completions for current input (triggered by down arrow)."""
         move_input = self.query_one("#move-input", Input)
         completion_list = self.query_one("#completion-list", OptionList)
 
@@ -301,21 +339,16 @@ class FileInfoModal(ModalScreen):
         completion_list.clear_options()
 
         if not completions:
-            # No completions found
             self.app.notify("No matching directories", severity="warning")
             return
 
-        if len(completions) == 1:
-            # Single match - auto-complete
-            self._apply_completion(str(completions[0]))
-            return
-
-        # Multiple matches - show list
+        # Always show list, let user select explicitly
         for path in completions:
             completion_list.add_option(Option(str(path)))
 
         completion_list.add_class("visible")
         completion_list.highlighted = 0
+        completion_list.focus()
         self._completion_visible = True
 
     def _hide_completions(self) -> None:
@@ -338,8 +371,11 @@ class FileInfoModal(ModalScreen):
         # Add trailing slash to encourage further completion
         if not path.endswith("/"):
             path = path + "/"
+        # Prevent on_input_changed from re-triggering completions
+        self._applying_completion = True
         move_input.value = path
         move_input.cursor_position = len(path)
+        self._applying_completion = False
         self._hide_completions()
         move_input.focus()
 
