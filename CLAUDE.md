@@ -112,12 +112,13 @@ Tab cycles through panels in clockwise order:
 Custom focus order is defined in `LibrarianApp.FOCUS_ORDER` with overridden `action_focus_next`/`action_focus_previous` methods.
 
 Key bindings:
+- `s` - Search files and tags
 - `e` - Edit selected file (only way to open editor)
 - `p` - Show full path of selected file
 - `r` - Refresh/rescan files
 - `n` - Create new markdown file with current tag
 - `x` - Export current file to PDF/HTML
-- `Escape` - Navigate back from wiki link
+- `Escape` - Navigate back from wiki link or exit search
 - `?` - Show help
 
 ## CSS Layout Notes
@@ -207,6 +208,24 @@ Librarian supports wiki-style links for navigating between markdown files:
 - Click a wiki link in the preview panel to navigate to that file
 - Press `Escape` to return to the previous view (tag/file list)
 - Navigation preserves the entire state: selected tag, file list, cursor position
+
+## Search
+
+Press `s` to search files by filename or tag. The search performs partial matching (case-insensitive) against both file names and tag names.
+
+### Behavior
+- Press `s` to enter search mode - the file list becomes a search input
+- Type to search - results update as you type
+- Results show filename and matching tags (if any)
+- If multiple results, use arrow keys to select
+- If single result, it previews automatically
+- Press `Enter` to move focus from search input to results
+- Press `Escape` to exit search mode
+
+### Implementation
+- `database.py`: `search_files(query)` returns `list[tuple[Path, float, list[str]]]` with matching files
+- `file_list.py`: `enter_search_mode()`, `exit_search_mode()`, `update_search_results()` methods
+- Search is performed on the in-memory index, not file contents
 
 ## File Creation
 

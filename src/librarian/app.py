@@ -60,6 +60,7 @@ class LibrarianApp(App):
         Binding("n", "new_file", "New"),
         Binding("e", "edit", "Edit"),
         Binding("r", "refresh", "Refresh"),
+        Binding("s", "search", "Search"),
         Binding("tab", "focus_next", "Next Panel", show=False),
         Binding("shift+tab", "focus_previous", "Prev Panel", show=False),
         Binding("p", "show_path", "Show Path"),
@@ -416,9 +417,25 @@ class LibrarianApp(App):
     def action_help(self) -> None:
         """Show help information."""
         self.notify(
-            "n=New, e=Edit, x=Export, p=Path, r=Refresh, Esc=Back, q=Quit",
+            "s=Search, n=New, e=Edit, x=Export, p=Path, r=Refresh, Esc=Back, q=Quit",
             timeout=5,
         )
+
+    def action_search(self) -> None:
+        """Enter search mode."""
+        file_list = self.query_one("#file-list", FileList)
+        if not file_list.is_search_mode():
+            file_list.enter_search_mode()
+
+    def on_file_list_search_mode_exited(
+        self, event: FileList.SearchModeExited
+    ) -> None:
+        """Handle search mode exit - restore focus to tag list."""
+        tag_list = self.query_one("#tag-list", TagList)
+        if self.config.tags.whitelist:
+            tag_list.favorites_list_view.focus()
+        else:
+            tag_list.all_tags_list_view.focus()
 
     async def on_preview_wiki_link_clicked(
         self, event: Preview.WikiLinkClicked
@@ -461,7 +478,13 @@ class LibrarianApp(App):
         self.set_timer(0.1, activate_file_list)
 
     async def action_go_back(self) -> None:
-        """Go back in navigation history."""
+        """Go back in navigation history or exit search mode."""
+        # First check if we're in search mode
+        file_list = self.query_one("#file-list", FileList)
+        if file_list.is_search_mode():
+            file_list.exit_search_mode()
+            return
+
         if self._nav_stack.is_empty():
             return
 

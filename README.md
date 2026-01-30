@@ -28,6 +28,7 @@ A terminal-based markdown tag browser. Librarian scans your markdown files for i
 - **Favorites Panel**: Pin frequently-used tags to a dedicated section
 - **Four-Panel UI**: Browse favorites, all tags, files, and preview content
 - **Live Preview**: Markdown rendered as you navigate
+- **Search**: Find files by filename or tag with partial matching
 - **Auto-Refresh**: File watcher updates index when files change
 - **Editor Integration**: Press `e` to edit files in your preferred editor
 - **Wiki Links**: Navigate between notes using `[[note.md]]` syntax
@@ -65,6 +66,7 @@ On first run, Librarian will:
 | Key | Action |
 |-----|--------|
 | `q` | Quit |
+| `s` | Search files and tags |
 | `e` | Edit selected file in configured editor |
 | `n` | Create new markdown file with current tag |
 | `x` | Export selected file to PDF/HTML |
@@ -73,8 +75,8 @@ On first run, Librarian will:
 | `Tab` | Cycle focus between panels (clockwise) |
 | `Shift+Tab` | Cycle focus backwards (counter-clockwise) |
 | `↑/↓` | Navigate lists / scroll preview |
-| `Enter` | Select tag |
-| `Escape` | Navigate back from wiki link |
+| `Enter` | Select tag / confirm search |
+| `Escape` | Navigate back / exit search |
 | `?` | Show help |
 
 Tab order follows a clockwise pattern: Favorites → Files → Preview → All Tags.
@@ -109,6 +111,18 @@ Librarian recognizes hashtags in the format:
 - Must start with `#` followed by a letter
 - Can contain letters, numbers, underscores, and hyphens
 - Examples: `#project`, `#todo-list`, `#meeting_notes`, `#2024goals`
+
+## Search
+
+Press `s` to search across all indexed files:
+
+1. The file list transforms into a search input
+2. Type to search - results update as you type
+3. Matches against filenames and tag names (case-insensitive, partial matching)
+4. Results show the filename and any matching tags
+5. Press `Enter` to move focus to the results list
+6. Use arrow keys to select a file for preview
+7. Press `Escape` to exit search mode
 
 ## Wiki Links
 

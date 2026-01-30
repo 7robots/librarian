@@ -147,6 +147,41 @@ def cleanup_orphaned_tags() -> None:
     pass
 
 
+def search_files(query: str) -> list[tuple[Path, float, list[str]]]:
+    """Search files by partial match on filename or tags.
+
+    Args:
+        query: Search query string (case-insensitive)
+
+    Returns:
+        List of (path, mtime, matching_tags) tuples sorted by mtime descending
+    """
+    if not query.strip():
+        return []
+
+    query_lower = query.lower().strip()
+    results: list[tuple[Path, float, list[str]]] = []
+
+    for path_str, entry in _index.items():
+        path = Path(path_str)
+        filename_lower = path.name.lower()
+
+        # Check filename match
+        filename_match = query_lower in filename_lower
+
+        # Check tag matches
+        matching_tags = [
+            tag for tag in entry["tags"] if query_lower in tag.lower()
+        ]
+
+        if filename_match or matching_tags:
+            results.append((path, entry["mtime"], matching_tags))
+
+    # Sort by mtime descending (most recently modified first)
+    results.sort(key=lambda x: x[1], reverse=True)
+    return results
+
+
 def resolve_wiki_link(target: str, current_file: Path | None = None) -> Path | None:
     """Resolve a wiki link target to a file path.
 

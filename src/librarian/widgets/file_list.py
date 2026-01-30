@@ -4,19 +4,24 @@ from pathlib import Path
 
 from textual.app import ComposeResult
 from textual.containers import Vertical
+from textual.events import Key
 from textual.message import Message
-from textual.widgets import Label, ListItem, ListView, Static
+from textual.widgets import Input, Label, ListItem, ListView, Static
 
 
 class FileItem(ListItem):
     """A list item representing a file."""
 
-    def __init__(self, file_path: Path) -> None:
+    def __init__(self, file_path: Path, match_info: str | None = None) -> None:
         super().__init__()
         self.file_path = file_path
+        self.match_info = match_info
 
     def compose(self) -> ComposeResult:
-        yield Label(self.file_path.name)
+        if self.match_info:
+            yield Label(f"{self.file_path.name}  [{self.match_info}]")
+        else:
+            yield Label(self.file_path.name)
 
 
 class FileList(Vertical):
@@ -34,6 +39,17 @@ class FileList(Vertical):
         text-style: bold;
         padding: 0 1;
         height: 1;
+    }
+
+    FileList > #search-input {
+        height: 1;
+        border: none;
+        padding: 0 1;
+        display: none;
+    }
+
+    FileList > #search-input.visible {
+        display: block;
     }
 
     FileList > #file-list-view {
@@ -67,14 +83,22 @@ class FileList(Vertical):
             super().__init__()
             self.file_path = file_path
 
+    class SearchModeExited(Message):
+        """Message emitted when search mode is exited."""
+
+        pass
+
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self._files: list[Path] = []
         self._current_tag: str | None = None
         self._navigation_target: str | None = None
+        self._search_mode: bool = False
+        self._match_info: dict[Path, str] = {}  # Store match info for display
 
     def compose(self) -> ComposeResult:
         yield Static("FILES", id="file-header")
+        yield Input(placeholder="Search files and tags...", id="search-input")
         yield ListView(id="file-list-view")
 
     @property
@@ -97,8 +121,15 @@ class FileList(Vertical):
         self._files = files
         self._current_tag = tag
         self._navigation_target = navigation_target
+        self._match_info = {}  # Clear match info when not in search mode
+        self._search_mode = False  # Exit search mode when files are updated
         list_view = self.list_view
         list_view.clear()
+
+        # Hide search input if visible
+        search_input = self.search_input
+        search_input.remove_class("visible")
+        search_input.value = ""
 
         # Update header
         header = self.query_one("#file-header", Static)
@@ -173,6 +204,7 @@ class FileList(Vertical):
         self._files = files
         self._current_tag = tag
         self._navigation_target = None
+        self._match_info = {}
         list_view = self.list_view
         list_view.clear()
 
@@ -187,3 +219,113 @@ class FileList(Vertical):
         if files and 0 <= selected_index < len(files):
             list_view.index = selected_index
             self.post_message(self.FileHighlighted(files[selected_index]))
+
+    @property
+    def search_input(self) -> Input:
+        return self.query_one("#search-input", Input)
+
+    def is_search_mode(self) -> bool:
+        """Check if currently in search mode."""
+        return self._search_mode
+
+    def enter_search_mode(self) -> None:
+        """Enter search mode - show input and focus it."""
+        self._search_mode = True
+        search_input = self.search_input
+        search_input.add_class("visible")
+        search_input.value = ""
+        search_input.focus()
+
+        # Update header
+        header = self.query_one("#file-header", Static)
+        header.update("SEARCH")
+
+        # Clear list while waiting for input
+        self._files = []
+        self._match_info = {}
+        self.list_view.clear()
+
+    def exit_search_mode(self) -> None:
+        """Exit search mode - hide input."""
+        self._search_mode = False
+        search_input = self.search_input
+        search_input.remove_class("visible")
+        search_input.value = ""
+
+        # Clear search results
+        self._files = []
+        self._match_info = {}
+        self.list_view.clear()
+
+        # Reset header
+        header = self.query_one("#file-header", Static)
+        header.update("FILES")
+
+        # Notify app that search mode exited
+        self.post_message(self.SearchModeExited())
+
+    def update_search_results(
+        self, results: list[tuple[Path, float, list[str]]]
+    ) -> None:
+        """Update the list with search results.
+
+        Args:
+            results: List of (path, mtime, matching_tags) tuples
+        """
+        self._files = [r[0] for r in results]
+        self._match_info = {}
+        self._current_tag = None
+        self._navigation_target = None
+
+        list_view = self.list_view
+        list_view.clear()
+
+        # Update header with result count
+        header = self.query_one("#file-header", Static)
+        header.update(f"SEARCH ({len(results)} results)")
+
+        for path, mtime, matching_tags in results:
+            # Create match info string showing which tags matched
+            if matching_tags:
+                match_info = ", ".join(f"#{t}" for t in matching_tags[:3])
+                if len(matching_tags) > 3:
+                    match_info += f" +{len(matching_tags) - 3}"
+            else:
+                match_info = None
+            self._match_info[path] = match_info
+            list_view.append(FileItem(path, match_info))
+
+        # Highlight first item if available and emit event
+        if self._files:
+            list_view.index = 0
+            self.post_message(self.FileHighlighted(self._files[0]))
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Handle search input changes."""
+        if self._search_mode and event.input.id == "search-input":
+            # Import here to avoid circular import
+            from ..database import search_files
+
+            query = event.value
+            if query.strip():
+                results = search_files(query)
+                self.update_search_results(results)
+            else:
+                # Clear results when query is empty
+                self._files = []
+                self._match_info = {}
+                self.list_view.clear()
+                header = self.query_one("#file-header", Static)
+                header.update("SEARCH")
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Handle Enter key in search input - move focus to results."""
+        if self._search_mode and event.input.id == "search-input":
+            if self._files:
+                self.list_view.focus()
+
+    def on_key(self, event: Key) -> None:
+        """Handle key events - Escape exits search mode."""
+        if self._search_mode and event.key == "escape":
+            self.exit_search_mode()
+            event.stop()
