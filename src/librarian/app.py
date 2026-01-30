@@ -18,7 +18,7 @@ from .export import export_markdown
 from .navigation import NavigationStack, NavigationState
 from .scanner import scan_directory
 from .watcher import FileWatcher
-from .widgets import FileList, Preview, TagList, load_file_content
+from .widgets import FileInfoModal, FileList, Preview, TagList, load_file_content
 
 
 class LibrarianApp(App):
@@ -63,7 +63,7 @@ class LibrarianApp(App):
         Binding("s", "search", "Search"),
         Binding("tab", "focus_next", "Next Panel", show=False),
         Binding("shift+tab", "focus_previous", "Prev Panel", show=False),
-        Binding("p", "show_path", "Show Path"),
+        Binding("i", "file_info", "Info"),
         Binding("x", "export", "Export"),
         Binding("?", "help", "Help"),
         Binding("escape", "go_back", "Back", show=False),
@@ -384,14 +384,29 @@ class LibrarianApp(App):
         """Run full rescan in background thread."""
         return scan_directory(self.config, full_rescan=True)
 
-    def action_show_path(self) -> None:
-        """Show the full path of the currently selected file."""
+    def action_file_info(self) -> None:
+        """Show file info modal for the currently selected file."""
         file_list = self.query_one("#file-list", FileList)
         file_path = file_list.get_selected_file()
         if file_path:
-            self.notify(str(file_path), timeout=10)
+            self.push_screen(FileInfoModal(file_path), self._on_file_info_dismissed)
         else:
             self.notify("No file selected", severity="warning")
+
+    def _on_file_info_dismissed(self, result) -> None:
+        """Handle file info modal dismissal."""
+        if result is None:
+            return
+
+        action, old_path, new_path = result
+
+        if action == "renamed":
+            self.notify(f"Renamed to {new_path.name}")
+        elif action == "moved":
+            self.notify(f"Moved to {new_path.parent}")
+
+        # Trigger a rescan to update the index
+        self.run_worker(self._background_full_rescan, exclusive=True, thread=True)
 
     def action_export(self) -> None:
         """Export the currently previewed file to PDF or HTML."""
@@ -417,7 +432,7 @@ class LibrarianApp(App):
     def action_help(self) -> None:
         """Show help information."""
         self.notify(
-            "s=Search, n=New, e=Edit, x=Export, p=Path, r=Refresh, Esc=Back, q=Quit",
+            "s=Search, n=New, e=Edit, x=Export, i=Info, r=Refresh, Esc=Back, q=Quit",
             timeout=5,
         )
 

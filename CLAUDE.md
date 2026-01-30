@@ -22,6 +22,7 @@ src/librarian/
     ├── __init__.py
     ├── tag_list.py      # Split panel: Favorites + All Tags (two ListViews)
     ├── file_list.py     # Files with selected tag (ListView + navigation mode)
+    ├── file_info.py     # Modal for file info, rename, and move operations
     └── preview.py       # Markdown preview pane (VerticalScroll + Markdown)
 ```
 
@@ -114,7 +115,7 @@ Custom focus order is defined in `LibrarianApp.FOCUS_ORDER` with overridden `act
 Key bindings:
 - `s` - Search files and tags
 - `e` - Edit selected file (only way to open editor)
-- `p` - Show full path of selected file
+- `i` - File info (view path, rename, or move file)
 - `r` - Refresh/rescan files
 - `n` - Create new markdown file with current tag
 - `x` - Export current file to PDF/HTML
