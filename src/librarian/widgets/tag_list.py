@@ -1,9 +1,28 @@
 """Tag list widget for browsing discovered tags."""
 
+from pathlib import Path
+from typing import Iterable
+
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.message import Message
-from textual.widgets import Label, ListItem, ListView, Static
+from textual.widgets import DirectoryTree, Label, ListItem, ListView, Static
+
+
+class MarkdownDirectoryTree(DirectoryTree):
+    """A DirectoryTree that only shows directories and markdown files."""
+
+    def filter_paths(self, paths: Iterable[Path]) -> Iterable[Path]:
+        """Filter to only show directories and markdown files."""
+        for path in paths:
+            # Always show directories
+            if path.is_dir():
+                # Skip hidden directories
+                if not path.name.startswith("."):
+                    yield path
+            # Only show markdown files
+            elif path.suffix.lower() == ".md":
+                yield path
 
 
 class TagItem(ListItem):
@@ -51,7 +70,15 @@ class TagList(Vertical):
         color: $primary-lighten-2;
     }
 
+    TagList #browse-header {
+        color: $success;
+    }
+
     TagList ListView {
+        height: 1fr;
+    }
+
+    TagList DirectoryTree {
         height: 1fr;
     }
 
@@ -70,6 +97,18 @@ class TagList(Vertical):
     TagList #favorites-section {
         background: $primary-background-darken-1;
     }
+
+    TagList #all-tags-section.hidden {
+        display: none;
+    }
+
+    TagList #browse-section {
+        display: none;
+    }
+
+    TagList #browse-section.visible {
+        display: block;
+    }
     """
 
     class TagSelected(Message):
@@ -79,18 +118,30 @@ class TagList(Vertical):
             super().__init__()
             self.tag_name = tag_name
 
-    def __init__(self, **kwargs) -> None:
+    class FileSelected(Message):
+        """Message emitted when a file is selected in browse mode."""
+
+        def __init__(self, file_path: Path) -> None:
+            super().__init__()
+            self.file_path = file_path
+
+    def __init__(self, scan_directory: Path | None = None, **kwargs) -> None:
         super().__init__(**kwargs)
         self._all_tags: list[tuple[str, int]] = []
         self._favorites: list[str] = []
+        self._scan_directory = scan_directory or Path.home()
+        self._browse_mode = False
 
     def compose(self) -> ComposeResult:
         with Vertical(classes="tag-section", id="favorites-section"):
             yield Static("\u2605 FAVORITES", classes="tag-header", id="favorites-header")
             yield ListView(id="favorites-list-view")
-        with Vertical(classes="tag-section"):
+        with Vertical(classes="tag-section", id="all-tags-section"):
             yield Static("ALL TAGS", classes="tag-header", id="all-tags-header")
             yield ListView(id="all-tags-list-view")
+        with Vertical(classes="tag-section", id="browse-section"):
+            yield Static("BROWSE (b)", classes="tag-header", id="browse-header")
+            yield MarkdownDirectoryTree(str(self._scan_directory), id="directory-tree")
 
     @property
     def favorites_list_view(self) -> ListView:
@@ -99,6 +150,40 @@ class TagList(Vertical):
     @property
     def all_tags_list_view(self) -> ListView:
         return self.query_one("#all-tags-list-view", ListView)
+
+    @property
+    def directory_tree(self) -> MarkdownDirectoryTree:
+        return self.query_one("#directory-tree", MarkdownDirectoryTree)
+
+    @property
+    def is_browse_mode(self) -> bool:
+        return self._browse_mode
+
+    def toggle_browse_mode(self) -> None:
+        """Toggle between All Tags view and Browse view."""
+        self._browse_mode = not self._browse_mode
+
+        all_tags_section = self.query_one("#all-tags-section")
+        browse_section = self.query_one("#browse-section")
+
+        if self._browse_mode:
+            all_tags_section.add_class("hidden")
+            browse_section.add_class("visible")
+            self.directory_tree.focus()
+        else:
+            all_tags_section.remove_class("hidden")
+            browse_section.remove_class("visible")
+            self.all_tags_list_view.focus()
+
+    def set_scan_directory(self, path: Path) -> None:
+        """Set the root directory for the directory browser."""
+        self._scan_directory = path
+        # Update the directory tree if it exists
+        try:
+            tree = self.directory_tree
+            tree.path = path
+        except Exception:
+            pass  # Tree not yet mounted
 
     def set_favorites(self, favorites: list[str]) -> None:
         """Set the list of favorite tag names."""
@@ -179,6 +264,12 @@ class TagList(Vertical):
         """Handle tag selection from either list."""
         if isinstance(event.item, TagItem):
             self.post_message(self.TagSelected(event.item.tag_name))
+
+    def on_directory_tree_file_selected(self, event: DirectoryTree.FileSelected) -> None:
+        """Handle file selection from directory tree."""
+        # Only handle markdown files
+        if event.path.suffix.lower() == ".md":
+            self.post_message(self.FileSelected(event.path))
 
     def get_selected_tag(self) -> str | None:
         """Get the currently selected tag name from either list."""

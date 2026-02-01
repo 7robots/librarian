@@ -27,10 +27,12 @@ A terminal-based markdown tag browser. Librarian scans your markdown files for i
 - **Tag Discovery**: Automatically finds hashtags in markdown files
 - **Favorites Panel**: Pin frequently-used tags to a dedicated section
 - **Four-Panel UI**: Browse favorites, all tags, files, and preview content
+- **Directory Browser**: Toggle to browse files by folder structure
 - **Live Preview**: Markdown rendered as you navigate
 - **Search**: Find files by filename or tag with partial matching
 - **Auto-Refresh**: File watcher updates index when files change
 - **Editor Integration**: Press `e` to edit files in your preferred editor
+- **File Management**: Rename and move files with keyboard shortcuts
 - **Wiki Links**: Navigate between notes using `[[note.md]]` syntax
 - **Export**: Export files to PDF or HTML with one keypress
 - **File Creation**: Create new notes with automatic tag insertion
@@ -69,9 +71,11 @@ On first run, Librarian will:
 | `s` | Search files and tags |
 | `e` | Edit selected file in configured editor |
 | `n` | Create new markdown file with current tag |
+| `r` | Rename selected file |
+| `m` | Move selected file to different directory |
+| `b` | Toggle browse mode (directory tree vs all tags) |
 | `x` | Export selected file to PDF/HTML |
-| `p` | Show full path of selected file |
-| `r` | Manual refresh/rescan all files |
+| `u` | Update/rescan all files |
 | `Tab` | Cycle focus between panels (clockwise) |
 | `Shift+Tab` | Cycle focus backwards (counter-clockwise) |
 | `↑/↓` | Navigate lists / scroll preview |
@@ -79,7 +83,7 @@ On first run, Librarian will:
 | `Escape` | Navigate back / exit search |
 | `?` | Show help |
 
-Tab order follows a clockwise pattern: Favorites → Files → Preview → All Tags.
+Tab order follows a clockwise pattern: Favorites → Files → Preview → All Tags (or Browse).
 
 ## Configuration
 
@@ -152,6 +156,40 @@ Press `n` while viewing a tag to create a new markdown file:
 4. The file opens automatically in your configured editor
 
 This makes it easy to quickly capture new notes within your existing tag structure.
+
+## File Management
+
+### Renaming Files
+
+Press `r` to rename the currently selected file:
+
+1. A modal appears with the current filename
+2. The filename (without extension) is pre-selected for easy editing
+3. Edit the name and press `Enter` or `Ctrl+S` to save
+4. Press `Escape` or `Ctrl+C` to cancel
+
+### Moving Files
+
+Press `m` to move the currently selected file to a different directory:
+
+1. A modal appears with the current directory path
+2. Edit the path or use Tab for Unix-style path completion:
+   - Single match: completes the full path
+   - Multiple matches: shows all options and completes the common prefix
+3. Press `Enter` or `Ctrl+S` to move the file
+4. Press `Escape` or `Ctrl+C` to cancel
+
+## Directory Browser
+
+Press `b` to toggle between the All Tags view and a directory browser:
+
+- The browser shows a tree view of your scan directory
+- Only markdown files and directories are displayed
+- Hidden files/directories (starting with `.`) are filtered out
+- Select a file to preview it
+- Press `b` again to return to the All Tags view
+
+This is useful for browsing files by location rather than by tag.
 
 ## Exporting Files
 

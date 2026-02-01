@@ -18,7 +18,7 @@ from .export import export_markdown
 from .navigation import NavigationStack, NavigationState
 from .scanner import scan_directory
 from .watcher import FileWatcher
-from .widgets import FileInfoModal, FileList, Preview, TagList, load_file_content
+from .widgets import RenameModal, MoveModal, FileList, Preview, TagList, load_file_content
 
 
 class LibrarianApp(App):
@@ -59,11 +59,13 @@ class LibrarianApp(App):
         Binding("q", "quit", "Quit"),
         Binding("n", "new_file", "New"),
         Binding("e", "edit", "Edit"),
-        Binding("r", "refresh", "Refresh"),
+        Binding("u", "update", "Update"),
         Binding("s", "search", "Search"),
         Binding("tab", "focus_next", "Next Panel", show=False),
         Binding("shift+tab", "focus_previous", "Prev Panel", show=False),
-        Binding("i", "file_info", "Info"),
+        Binding("r", "rename_file", "Rename"),
+        Binding("m", "move_file", "Move"),
+        Binding("b", "toggle_browse", "Browse"),
         Binding("x", "export", "Export"),
         Binding("?", "help", "Help"),
         Binding("escape", "go_back", "Back", show=False),
@@ -88,7 +90,11 @@ class LibrarianApp(App):
     def compose(self) -> ComposeResult:
         yield Header()
         with Horizontal(id="main-container"):
-            yield TagList(id="tag-list", classes="panel")
+            yield TagList(
+                scan_directory=self.config.scan_directory,
+                id="tag-list",
+                classes="panel",
+            )
             with Vertical(id="right-panel"):
                 yield FileList(id="file-list", classes="panel")
                 yield Preview(id="preview", classes="panel")
@@ -284,6 +290,9 @@ class LibrarianApp(App):
         if widget_id == "favorites-list-view":
             return tag_list.favorites_list_view
         elif widget_id == "all-tags-list-view":
+            # Return directory tree if in browse mode
+            if tag_list.is_browse_mode:
+                return tag_list.directory_tree
             return tag_list.all_tags_list_view
         elif widget_id == "file-list-view":
             return self.query_one("#file-list", FileList).list_view
@@ -306,6 +315,7 @@ class LibrarianApp(App):
             id(file_list.list_view): 1,
             id(preview.scroll_view): 2,
             id(tag_list.all_tags_list_view): 3,
+            id(tag_list.directory_tree): 3,  # Same position as all-tags
         }
         return focus_map.get(id(focused), -1)
 
@@ -375,26 +385,26 @@ class LibrarianApp(App):
             except Exception as e:
                 self.notify(f"Error opening editor: {e}", severity="error")
 
-    async def action_refresh(self) -> None:
-        """Manually refresh the index."""
-        self.notify("Rescanning...")
+    async def action_update(self) -> None:
+        """Manually update the index."""
+        self.notify("Updating...")
         self.run_worker(self._background_full_rescan, exclusive=True, thread=True)
 
     def _background_full_rescan(self) -> tuple[int, int, int]:
         """Run full rescan in background thread."""
         return scan_directory(self.config, full_rescan=True)
 
-    def action_file_info(self) -> None:
-        """Show file info modal for the currently selected file."""
+    def action_rename_file(self) -> None:
+        """Show rename modal for the currently selected file."""
         file_list = self.query_one("#file-list", FileList)
         file_path = file_list.get_selected_file()
         if file_path:
-            self.push_screen(FileInfoModal(file_path), self._on_file_info_dismissed)
+            self.push_screen(RenameModal(file_path), self._on_rename_dismissed)
         else:
             self.notify("No file selected", severity="warning")
 
-    def _on_file_info_dismissed(self, result) -> None:
-        """Handle file info modal dismissal."""
+    def _on_rename_dismissed(self, result) -> None:
+        """Handle rename modal dismissal."""
         if result is None:
             return
 
@@ -402,7 +412,27 @@ class LibrarianApp(App):
 
         if action == "renamed":
             self.notify(f"Renamed to {new_path.name}")
-        elif action == "moved":
+
+        # Trigger a rescan to update the index
+        self.run_worker(self._background_full_rescan, exclusive=True, thread=True)
+
+    def action_move_file(self) -> None:
+        """Show move modal for the currently selected file."""
+        file_list = self.query_one("#file-list", FileList)
+        file_path = file_list.get_selected_file()
+        if file_path:
+            self.push_screen(MoveModal(file_path), self._on_move_dismissed)
+        else:
+            self.notify("No file selected", severity="warning")
+
+    def _on_move_dismissed(self, result) -> None:
+        """Handle move modal dismissal."""
+        if result is None:
+            return
+
+        action, old_path, new_path = result
+
+        if action == "moved":
             self.notify(f"Moved to {new_path.parent}")
 
         # Trigger a rescan to update the index
@@ -429,10 +459,35 @@ class LibrarianApp(App):
         """Handle export completion."""
         self.notify(f"Exported to {output_path.name} ({fmt.upper()})", timeout=5)
 
+    def action_toggle_browse(self) -> None:
+        """Toggle between All Tags and Browse mode."""
+        tag_list = self.query_one("#tag-list", TagList)
+        tag_list.toggle_browse_mode()
+        mode = "Browse" if tag_list.is_browse_mode else "Tags"
+        self.notify(f"Switched to {mode} mode")
+
+    async def on_tag_list_file_selected(self, event: TagList.FileSelected) -> None:
+        """Handle file selection from directory browser."""
+        file_path = event.file_path
+
+        # Clear navigation history
+        self._nav_stack.clear()
+
+        # Update file list to show single file
+        file_list = self.query_one("#file-list", FileList)
+        file_list.update_files([file_path], navigation_target=file_path.name)
+
+        # Update preview
+        preview = self.query_one("#preview", Preview)
+        await preview.show_file(file_path)
+
+        # Focus the file list
+        file_list.list_view.focus()
+
     def action_help(self) -> None:
         """Show help information."""
         self.notify(
-            "s=Search, n=New, e=Edit, x=Export, i=Info, r=Refresh, Esc=Back, q=Quit",
+            "s=Search, n=New, e=Edit, x=Export, r=Rename, m=Move, b=Browse, u=Update, q=Quit",
             timeout=5,
         )
 

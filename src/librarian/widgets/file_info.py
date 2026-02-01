@@ -1,5 +1,6 @@
-"""File info modal for viewing path, renaming, and moving files."""
+"""Modals for file rename and move operations."""
 
+import os
 import shutil
 from pathlib import Path
 
@@ -8,81 +9,32 @@ from textual.binding import Binding
 from textual.containers import Vertical, Horizontal
 from textual.message import Message
 from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Label, Static, OptionList
-from textual.widgets.option_list import Option
+from textual.widgets import Button, Input, Label, Static
 
 
-def get_directory_completions(partial_path: str) -> list[Path]:
-    """Get directory completions for a partial path.
-
-    Args:
-        partial_path: The partial path to complete
-
-    Returns:
-        List of matching directory paths
-    """
-    if not partial_path:
-        return []
-
-    # Expand ~ to home directory
-    expanded = Path(partial_path).expanduser()
-
-    # If the path ends with /, list contents of that directory
-    if partial_path.endswith("/") or partial_path.endswith("\\"):
-        if expanded.is_dir():
-            try:
-                dirs = sorted([
-                    p for p in expanded.iterdir()
-                    if p.is_dir() and not p.name.startswith(".")
-                ])
-                return dirs[:20]  # Limit results
-            except PermissionError:
-                return []
-        return []
-
-    # Otherwise, find matching entries in the parent directory
-    parent = expanded.parent
-    prefix = expanded.name.lower()
-
-    if not parent.exists():
-        return []
-
-    try:
-        matches = sorted([
-            p for p in parent.iterdir()
-            if p.is_dir()
-            and p.name.lower().startswith(prefix)
-            and not p.name.startswith(".")
-        ])
-        return matches[:20]  # Limit results
-    except PermissionError:
-        return []
-
-
-class FileInfoModal(ModalScreen):
-    """Modal screen for file information and operations."""
+class RenameModal(ModalScreen):
+    """Modal screen for renaming a file."""
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel", show=False),
-        Binding("tab", "focus_next", "Next field", show=False),
-        Binding("shift+tab", "focus_previous", "Previous field", show=False),
+        Binding("ctrl+c", "cancel", "Cancel", show=False),
+        Binding("ctrl+s", "save", "Save", show=False),
     ]
 
     CSS = """
-    FileInfoModal {
+    RenameModal {
         align: center middle;
     }
 
-    #file-info-container {
-        width: 70;
+    #rename-container {
+        width: 60;
         height: auto;
-        max-height: 40;
         background: $surface;
         border: solid $primary;
         padding: 1 2;
     }
 
-    #file-info-title {
+    #rename-title {
         text-align: center;
         text-style: bold;
         margin-bottom: 1;
@@ -93,16 +45,10 @@ class FileInfoModal(ModalScreen):
         color: $text-muted;
     }
 
-    .info-value {
-        margin-bottom: 1;
-    }
-
-    #path-display {
+    #current-name {
         color: $text;
         padding: 0 1;
         background: $surface-darken-1;
-        height: auto;
-        max-height: 3;
     }
 
     .input-row {
@@ -114,53 +60,15 @@ class FileInfoModal(ModalScreen):
         width: 1fr;
     }
 
-    #move-section {
-        height: auto;
-    }
-
-    #completion-list {
-        height: auto;
-        max-height: 8;
-        display: none;
-        background: $surface-darken-1;
-        border: solid $primary-darken-1;
-        margin-top: 0;
-    }
-
-    #completion-list.visible {
-        display: block;
-    }
-
-    #completion-hint {
-        color: $text-muted;
-        text-style: italic;
-        height: 1;
-        margin-top: 0;
-    }
-
     #button-row {
         margin-top: 2;
         height: 3;
-        min-height: 3;
         align: center middle;
     }
 
     #button-row Button {
         margin: 0 1;
         min-width: 12;
-        height: 3;
-    }
-
-    #rename-btn {
-        background: $primary;
-    }
-
-    #move-btn {
-        background: $warning;
-    }
-
-    #cancel-btn {
-        background: $surface-lighten-1;
     }
     """
 
@@ -172,28 +80,18 @@ class FileInfoModal(ModalScreen):
             self.old_path = old_path
             self.new_path = new_path
 
-    class FileMoved(Message):
-        """Message emitted when a file is moved."""
-
-        def __init__(self, old_path: Path, new_path: Path) -> None:
-            super().__init__()
-            self.old_path = old_path
-            self.new_path = new_path
-
     def __init__(self, file_path: Path) -> None:
         super().__init__()
         self.file_path = file_path
-        self._completion_visible = False
-        self._applying_completion = False  # Prevent re-triggering on programmatic changes
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="file-info-container"):
-            yield Static("FILE INFO", id="file-info-title")
+        with Vertical(id="rename-container"):
+            yield Static("RENAME FILE", id="rename-title")
 
-            yield Label("Path:", classes="info-label")
-            yield Static(str(self.file_path), id="path-display", classes="info-value")
+            yield Label("Current name:", classes="info-label")
+            yield Static(self.file_path.name, id="current-name")
 
-            yield Label("Rename (new filename):", classes="info-label")
+            yield Label("New name:", classes="info-label")
             with Horizontal(classes="input-row"):
                 yield Input(
                     value=self.file_path.name,
@@ -201,183 +99,45 @@ class FileInfoModal(ModalScreen):
                     placeholder="Enter new filename",
                 )
 
-            with Vertical(id="move-section"):
-                yield Label("Move to directory:", classes="info-label")
-                with Horizontal(classes="input-row"):
-                    yield Input(
-                        value=str(self.file_path.parent),
-                        id="move-input",
-                        placeholder="Enter destination directory",
-                    )
-                yield Static("↓: show/select completions, Enter: confirm", id="completion-hint")
-                yield OptionList(id="completion-list")
-
             with Horizontal(id="button-row"):
-                yield Button("Rename", id="rename-btn", variant="primary")
-                yield Button("Move", id="move-btn", variant="warning")
-                yield Button("Cancel", id="cancel-btn")
+                yield Button("Save (^S)", id="save-btn", variant="primary")
+                yield Button("Cancel (^C)", id="cancel-btn")
 
     def on_mount(self) -> None:
-        """Focus the rename input on mount."""
-        self.query_one("#rename-input", Input).focus()
-
-    def action_focus_next(self) -> None:
-        """Move focus to next widget."""
-        self.focus_next()
-
-    def action_focus_previous(self) -> None:
-        """Move focus to previous widget."""
-        self.focus_previous()
+        """Focus and select the input on mount."""
+        input_widget = self.query_one("#rename-input", Input)
+        input_widget.focus()
+        # Select the filename without extension for easy editing
+        name = self.file_path.name
+        if "." in name and not name.startswith("."):
+            stem_end = name.rfind(".")
+            input_widget.selection = (0, stem_end)
 
     def action_cancel(self) -> None:
         """Cancel and close the modal."""
-        if self._completion_visible:
-            self._hide_completions()
-        else:
-            self.dismiss(None)
+        self.dismiss(None)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button presses."""
         if event.button.id == "cancel-btn":
             self.dismiss(None)
-        elif event.button.id == "rename-btn":
+        elif event.button.id == "save-btn":
             self._do_rename()
-        elif event.button.id == "move-btn":
-            self._do_move()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        """Handle Enter key in inputs."""
-        if event.input.id == "rename-input":
-            self._do_rename()
-        elif event.input.id == "move-input":
-            if self._completion_visible:
-                self._select_current_completion()
-            else:
-                self._do_move()
-
-    def on_input_changed(self, event: Input.Changed) -> None:
-        """Auto-show completions as user types in move input (fish-style)."""
-        if event.input.id != "move-input":
-            return
-        if self._applying_completion:
-            return
-
-        current_value = event.value
-        if not current_value:
-            self._hide_completions()
-            return
-
-        completions = get_directory_completions(current_value)
-        completion_list = self.query_one("#completion-list", OptionList)
-        completion_list.clear_options()
-
-        if not completions:
-            self._hide_completions()
-            return
-
-        # Show completions inline (don't auto-apply single match while typing)
-        for path in completions:
-            completion_list.add_option(Option(str(path)))
-
-        completion_list.add_class("visible")
-        completion_list.highlighted = 0
-        self._completion_visible = True
+        """Handle Enter key in input."""
+        self._do_rename()
 
     def on_key(self, event) -> None:
-        """Handle key events for completion navigation."""
-        move_input = self.query_one("#move-input", Input)
-        completion_list = self.query_one("#completion-list", OptionList)
-
-        # Only handle keys when move input or completion list is focused
-        if self.focused not in (move_input, completion_list):
-            return
-
-        # Down arrow: show completions or navigate into list
-        if event.key == "down":
-            if self._completion_visible:
-                event.stop()
-                event.prevent_default()
-                completion_list.focus()
-                if completion_list.highlighted is None and completion_list.option_count > 0:
-                    completion_list.highlighted = 0
-            elif self.focused == move_input:
-                # Show completions on down arrow from input
-                event.stop()
-                event.prevent_default()
-                self._show_completions()
-
-        # Up arrow: navigate completion list
-        elif event.key == "up" and self._completion_visible:
+        """Handle key events."""
+        if event.key == "ctrl+c":
             event.stop()
             event.prevent_default()
-            if self.focused == completion_list:
-                # If at top of list, go back to input
-                if completion_list.highlighted == 0:
-                    move_input.focus()
-                # else let default up behavior work
+            self.action_cancel()
 
-        # Escape: hide completions
-        elif event.key == "escape" and self._completion_visible:
-            event.stop()
-            event.prevent_default()
-            self._hide_completions()
-            move_input.focus()
-
-    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
-        """Handle completion selection."""
-        if event.option_list.id == "completion-list":
-            self._apply_completion(str(event.option.prompt))
-
-    def _show_completions(self) -> None:
-        """Show directory completions for current input (triggered by down arrow)."""
-        move_input = self.query_one("#move-input", Input)
-        completion_list = self.query_one("#completion-list", OptionList)
-
-        current_value = move_input.value
-        completions = get_directory_completions(current_value)
-
-        completion_list.clear_options()
-
-        if not completions:
-            self.app.notify("No matching directories", severity="warning")
-            return
-
-        # Always show list, let user select explicitly
-        for path in completions:
-            completion_list.add_option(Option(str(path)))
-
-        completion_list.add_class("visible")
-        completion_list.highlighted = 0
-        completion_list.focus()
-        self._completion_visible = True
-
-    def _hide_completions(self) -> None:
-        """Hide the completion list."""
-        completion_list = self.query_one("#completion-list", OptionList)
-        completion_list.remove_class("visible")
-        completion_list.clear_options()
-        self._completion_visible = False
-
-    def _select_current_completion(self) -> None:
-        """Select the currently highlighted completion."""
-        completion_list = self.query_one("#completion-list", OptionList)
-        if completion_list.highlighted is not None:
-            option = completion_list.get_option_at_index(completion_list.highlighted)
-            self._apply_completion(str(option.prompt))
-
-    def _apply_completion(self, path: str) -> None:
-        """Apply a completion to the move input."""
-        move_input = self.query_one("#move-input", Input)
-        # Add trailing slash to encourage further completion
-        if not path.endswith("/"):
-            path = path + "/"
-        # Prevent on_input_changed from re-triggering completions
-        self._applying_completion = True
-        move_input.value = path
-        move_input.cursor_position = len(path)
-        self._applying_completion = False
-        self._hide_completions()
-        move_input.focus()
+    def action_save(self) -> None:
+        """Save action triggered by Ctrl+S."""
+        self._do_rename()
 
     def _do_rename(self) -> None:
         """Rename the file."""
@@ -404,6 +164,287 @@ class FileInfoModal(ModalScreen):
             self.dismiss(("renamed", self.file_path, new_path))
         except OSError as e:
             self.app.notify(f"Rename failed: {e}", severity="error")
+
+
+def get_directory_completions(partial_path: str) -> list[Path]:
+    """Get directory completions for a partial path.
+
+    Args:
+        partial_path: The partial path to complete
+
+    Returns:
+        List of matching directory paths
+    """
+    if not partial_path:
+        return []
+
+    # Expand ~ to home directory
+    expanded = Path(partial_path).expanduser()
+
+    # If the path ends with /, list contents of that directory
+    if partial_path.endswith("/") or partial_path.endswith(os.sep):
+        if expanded.is_dir():
+            try:
+                dirs = sorted([
+                    p for p in expanded.iterdir()
+                    if p.is_dir() and not p.name.startswith(".")
+                ])
+                return dirs
+            except PermissionError:
+                return []
+        return []
+
+    # Otherwise, find matching entries in the parent directory
+    parent = expanded.parent
+    prefix = expanded.name.lower()
+
+    if not parent.exists():
+        return []
+
+    try:
+        matches = sorted([
+            p for p in parent.iterdir()
+            if p.is_dir()
+            and p.name.lower().startswith(prefix)
+            and not p.name.startswith(".")
+        ])
+        return matches
+    except PermissionError:
+        return []
+
+
+def get_common_prefix(paths: list[Path]) -> str:
+    """Get the longest common prefix of a list of paths.
+
+    Args:
+        paths: List of paths to find common prefix for
+
+    Returns:
+        The longest common prefix string
+    """
+    if not paths:
+        return ""
+    if len(paths) == 1:
+        return str(paths[0])
+
+    # Get the path strings
+    strings = [str(p) for p in paths]
+
+    # Find the shortest string
+    min_len = min(len(s) for s in strings)
+
+    # Find the longest common prefix
+    prefix = ""
+    for i in range(min_len):
+        char = strings[0][i]
+        if all(s[i] == char for s in strings):
+            prefix += char
+        else:
+            break
+
+    return prefix
+
+
+class MoveModal(ModalScreen):
+    """Modal screen for moving a file to a different directory."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel", show=False),
+        Binding("ctrl+c", "cancel", "Cancel", show=False),
+        Binding("ctrl+s", "save", "Save", show=False),
+    ]
+
+    CSS = """
+    MoveModal {
+        align: center middle;
+    }
+
+    #move-container {
+        width: 70;
+        height: auto;
+        background: $surface;
+        border: solid $primary;
+        padding: 1 2;
+    }
+
+    #move-title {
+        text-align: center;
+        text-style: bold;
+        margin-bottom: 1;
+    }
+
+    .info-label {
+        margin-top: 1;
+        color: $text-muted;
+    }
+
+    #current-path {
+        color: $text;
+        padding: 0 1;
+        background: $surface-darken-1;
+        height: auto;
+        max-height: 2;
+    }
+
+    .input-row {
+        height: 3;
+        margin-top: 1;
+    }
+
+    .input-row Input {
+        width: 1fr;
+    }
+
+    #completion-display {
+        height: auto;
+        max-height: 10;
+        margin-top: 1;
+        padding: 0 1;
+        background: $surface-darken-1;
+        display: none;
+    }
+
+    #completion-display.visible {
+        display: block;
+    }
+
+    #tab-hint {
+        color: $text-muted;
+        text-style: italic;
+        margin-top: 1;
+    }
+
+    #button-row {
+        margin-top: 2;
+        height: 3;
+        align: center middle;
+    }
+
+    #button-row Button {
+        margin: 0 1;
+        min-width: 12;
+    }
+    """
+
+    class FileMoved(Message):
+        """Message emitted when a file is moved."""
+
+        def __init__(self, old_path: Path, new_path: Path) -> None:
+            super().__init__()
+            self.old_path = old_path
+            self.new_path = new_path
+
+    def __init__(self, file_path: Path) -> None:
+        super().__init__()
+        self.file_path = file_path
+        self._last_completions: list[Path] = []
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="move-container"):
+            yield Static("MOVE FILE", id="move-title")
+
+            yield Label("File:", classes="info-label")
+            yield Static(self.file_path.name, id="current-path")
+
+            yield Label("Move to directory:", classes="info-label")
+            with Horizontal(classes="input-row"):
+                yield Input(
+                    value=str(self.file_path.parent),
+                    id="move-input",
+                    placeholder="Enter destination directory",
+                )
+
+            yield Static("", id="completion-display")
+            yield Static("Press Tab to complete path", id="tab-hint")
+
+            with Horizontal(id="button-row"):
+                yield Button("Save (^S)", id="save-btn", variant="primary")
+                yield Button("Cancel (^C)", id="cancel-btn")
+
+    def on_mount(self) -> None:
+        """Focus the input on mount."""
+        input_widget = self.query_one("#move-input", Input)
+        input_widget.focus()
+        # Position cursor at the end
+        input_widget.cursor_position = len(input_widget.value)
+
+    def action_cancel(self) -> None:
+        """Cancel and close the modal."""
+        self.dismiss(None)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button presses."""
+        if event.button.id == "cancel-btn":
+            self.dismiss(None)
+        elif event.button.id == "save-btn":
+            self._do_move()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Handle Enter key in input."""
+        self._do_move()
+
+    def action_save(self) -> None:
+        """Save action triggered by 's' key."""
+        self._do_move()
+
+    def on_key(self, event) -> None:
+        """Handle key events."""
+        if event.key == "tab":
+            event.stop()
+            event.prevent_default()
+            self._do_tab_completion()
+        elif event.key == "ctrl+c":
+            event.stop()
+            event.prevent_default()
+            self.action_cancel()
+
+    def _do_tab_completion(self) -> None:
+        """Perform Unix-style tab completion."""
+        move_input = self.query_one("#move-input", Input)
+        completion_display = self.query_one("#completion-display", Static)
+
+        current_value = move_input.value
+        completions = get_directory_completions(current_value)
+
+        if not completions:
+            # No matches - hide display and notify
+            completion_display.remove_class("visible")
+            completion_display.update("")
+            self._last_completions = []
+            self.app.notify("No matching directories", severity="warning")
+            return
+
+        if len(completions) == 1:
+            # Single match - complete it fully with trailing slash
+            completed = str(completions[0]) + "/"
+            move_input.value = completed
+            move_input.cursor_position = len(completed)
+            completion_display.remove_class("visible")
+            completion_display.update("")
+            self._last_completions = []
+        else:
+            # Multiple matches - show them and do partial completion
+            # Find longest common prefix
+            common = get_common_prefix(completions)
+
+            # If we can extend the current input, do it
+            if len(common) > len(current_value.rstrip("/")):
+                move_input.value = common
+                move_input.cursor_position = len(common)
+
+            # Display all matches (just the directory names)
+            match_names = [p.name + "/" for p in completions]
+
+            # Format in columns if there are many
+            if len(match_names) <= 10:
+                display_text = "  ".join(match_names)
+            else:
+                # Show first 10 and indicate more
+                display_text = "  ".join(match_names[:10]) + f"\n  ... and {len(match_names) - 10} more"
+
+            completion_display.update(display_text)
+            completion_display.add_class("visible")
+            self._last_completions = completions
 
     def _do_move(self) -> None:
         """Move the file to a new directory."""
@@ -440,7 +481,7 @@ class FileInfoModal(ModalScreen):
         new_path = dest_dir / self.file_path.name
 
         if new_path.exists():
-            self.app.notify(f"File already exists at destination", severity="error")
+            self.app.notify("File already exists at destination", severity="error")
             return
 
         try:
@@ -449,3 +490,7 @@ class FileInfoModal(ModalScreen):
             self.dismiss(("moved", self.file_path, new_path))
         except OSError as e:
             self.app.notify(f"Move failed: {e}", severity="error")
+
+
+# Keep FileInfoModal as an alias for backwards compatibility during transition
+FileInfoModal = RenameModal

@@ -20,9 +20,9 @@ src/librarian/
 ├── export.py            # Export to PDF/HTML functionality
 └── widgets/
     ├── __init__.py
-    ├── tag_list.py      # Split panel: Favorites + All Tags (two ListViews)
+    ├── tag_list.py      # Split panel: Favorites + All Tags/Browse (with DirectoryTree)
     ├── file_list.py     # Files with selected tag (ListView + navigation mode)
-    ├── file_info.py     # Modal for file info, rename, and move operations
+    ├── file_info.py     # RenameModal and MoveModal for file operations
     └── preview.py       # Markdown preview pane (VerticalScroll + Markdown)
 ```
 
@@ -55,9 +55,11 @@ Denormalized structure with tags inline per file. Only files containing at least
 ## UI Layout
 
 The app has four panels:
-- **Left sidebar** (25% width): Split into Favorites (top) and All Tags (bottom)
+- **Left sidebar** (25% width): Split into Favorites (top) and All Tags or Browse (bottom)
 - **Right top** (33% height): File list for selected tag
 - **Right bottom** (67% height): Markdown preview
+
+The bottom-left panel toggles between All Tags (ListView) and Browse mode (DirectoryTree) with `b`.
 
 Layout uses percentage-based CSS for dynamic terminal resizing.
 
@@ -97,7 +99,9 @@ cat ~/Documents/librarian/index.json
 
 ## Widget Communication
 
-- `TagList` contains two ListViews (favorites + all tags), emits `TagSelected` message
+- `TagList` contains Favorites ListView, All Tags ListView, and DirectoryTree (browse mode)
+  - Emits `TagSelected` when a tag is selected
+  - Emits `FileSelected` when a file is selected in browse mode
 - `FileList` emits `FileHighlighted` when cursor moves (updates preview)
 - `Preview` receives file paths via `show_file()` async method, scrollable when focused
 - App handles all messages in `on_<widget>_<message>` handlers
@@ -115,8 +119,10 @@ Custom focus order is defined in `LibrarianApp.FOCUS_ORDER` with overridden `act
 Key bindings:
 - `s` - Search files and tags
 - `e` - Edit selected file (only way to open editor)
-- `i` - File info (view path, rename, or move file)
-- `r` - Refresh/rescan files
+- `r` - Rename file
+- `m` - Move file to different directory (Tab for completion)
+- `b` - Toggle browse mode (directory tree vs all tags)
+- `u` - Update/rescan files
 - `n` - Create new markdown file with current tag
 - `x` - Export current file to PDF/HTML
 - `Escape` - Navigate back from wiki link or exit search

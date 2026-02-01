@@ -3,6 +3,14 @@
 from .tag_list import TagList
 from .file_list import FileList
 from .preview import Preview, load_file_content
-from .file_info import FileInfoModal
+from .file_info import RenameModal, MoveModal, FileInfoModal
 
-__all__ = ["TagList", "FileList", "Preview", "load_file_content", "FileInfoModal"]
+__all__ = [
+    "TagList",
+    "FileList",
+    "Preview",
+    "load_file_content",
+    "RenameModal",
+    "MoveModal",
+    "FileInfoModal",
+]
