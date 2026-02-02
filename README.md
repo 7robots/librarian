@@ -34,7 +34,7 @@ A terminal-based markdown tag browser. Librarian scans your markdown files for i
 - **Editor Integration**: Press `e` to edit files in your preferred editor
 - **File Management**: Rename and move files with keyboard shortcuts
 - **Wiki Links**: Navigate between notes using `[[note.md]]` syntax
-- **Export**: Export files to PDF or HTML with one keypress
+- **Export**: Export files to HTML with one keypress
 - **File Creation**: Create new notes with automatic tag insertion
 - **Dynamic Layout**: Resize terminal window and UI adapts
 
@@ -74,7 +74,7 @@ On first run, Librarian will:
 | `r` | Rename selected file |
 | `m` | Move selected file to different directory |
 | `b` | Toggle browse mode (directory tree vs all tags) |
-| `x` | Export selected file to PDF/HTML |
+| `x` | Export selected file to HTML |
 | `u` | Update/rescan all files |
 | `Tab` | Cycle focus between panels (clockwise) |
 | `Shift+Tab` | Cycle focus backwards (counter-clockwise) |
@@ -96,7 +96,7 @@ scan_directory = "~/Documents"
 # Editor command for editing files (e.g., "vim", "code", "nano")
 editor = "vim"
 
-# Directory for exported files (PDF/HTML)
+# Directory for exported HTML files
 export_directory = "~/Downloads"
 
 # Tag filtering
@@ -193,12 +193,11 @@ This is useful for browsing files by location rather than by tag.
 
 ## Exporting Files
 
-Press `x` to export the currently selected file to PDF or HTML:
+Press `x` to export the currently selected file to HTML:
 
-- **PDF export**: Requires the optional `weasyprint` package
-  - Install with: `pip install 'librarian[pdf]'` or `uv pip install 'librarian[pdf]'`
-  - Note: weasyprint requires system dependencies (see their docs)
-- **HTML export**: Always available, creates a standalone HTML file
+- Creates a standalone HTML file with embedded CSS
+- Professional GitHub-style markdown rendering
+- Output is sanitized to prevent XSS (dangerous tags/attributes removed)
 
 Exported files are saved to your configured `export_directory` (default: `~/Downloads`) with professional styling suitable for sharing or printing.
 
@@ -229,17 +228,10 @@ uv run python -m librarian
 
 ## Dependencies
 
-### Core Dependencies
 - [Textual](https://textual.textualize.io/) - TUI framework
 - [watchdog](https://python-watchdog.readthedocs.io/) - File system monitoring
 - [Rich](https://rich.readthedocs.io/) - Markdown rendering (bundled with Textual)
 - [Python Markdown](https://python-markdown.github.io/) - Markdown to HTML conversion
-
-### Optional Dependencies
-- [WeasyPrint](https://weasyprint.org/) - PDF export functionality
-  - Install with: `pip install 'librarian[pdf]'` or `uv pip install 'librarian[pdf]'`
-  - Requires system dependencies (see WeasyPrint documentation)
-  - If not installed, export will create HTML files instead
 
 ## License
 

@@ -17,7 +17,7 @@ src/librarian/
 ├── watcher.py           # File system watcher using watchdog
 ├── wikilink.py          # Wiki link preprocessing and parsing
 ├── navigation.py        # Navigation state management for wiki links
-├── export.py            # Export to PDF/HTML functionality
+├── export.py            # Export to HTML functionality (with sanitization)
 └── widgets/
     ├── __init__.py
     ├── tag_list.py      # Split panel: Favorites + All Tags/Browse (with DirectoryTree)
@@ -35,7 +35,7 @@ src/librarian/
 - **Auto-refresh**: watchdog monitors scan directory with debouncing
 - **Favorites**: Tags in config whitelist appear in dedicated Favorites panel
 - **Wiki links**: `[[note.md]]` or `[[note|display text]]` syntax, preprocessed to `wikilink:` scheme
-- **Export**: PDF (via weasyprint) or HTML export with configurable output directory
+- **Export**: HTML export with configurable output directory (sanitized output)
 
 ## Index Schema
 
@@ -124,7 +124,7 @@ Key bindings:
 - `b` - Toggle browse mode (directory tree vs all tags)
 - `u` - Update/rescan files
 - `n` - Create new markdown file with current tag
-- `x` - Export current file to PDF/HTML
+- `x` - Export current file to HTML
 - `Escape` - Navigate back from wiki link or exit search
 - `?` - Show help
 
@@ -156,6 +156,9 @@ class Config:
 
 - **Background scanning**: Initial scan runs in background worker, UI loads immediately with cached index
 - **Batched writes**: `batch_writes()` context manager defers JSON saves until batch completes
+- **Batched watcher updates**: File watcher batches multiple file changes into single index write
+- **Targeted rescan**: Rename/move operations update only affected files, not full directory scan
+- **Thread-safe writes**: Index writes protected by threading lock to prevent corruption
 - **Incremental UI updates**: Tag list updates only changed items, preserves cursor position
 - **File content cache**: LRU cache (10 files) for preview with mtime-based invalidation
 
@@ -174,8 +177,7 @@ with batch_writes():
 - `textual>=0.47.0` - TUI framework
 - `watchdog>=4.0.0` - File system monitoring
 - `rich` - Markdown rendering (included with textual)
-- `markdown>=3.7` - Markdown to HTML conversion for export
-- `weasyprint` - Optional, for PDF export (requires system dependencies)
+- `markdown>=3.5.0` - Markdown to HTML conversion for export
 
 ## Wiki Link Navigation
 
@@ -253,15 +255,15 @@ Press `n` to create a new markdown file in the scan directory.
 Content here...
 ```
 
-## Export to PDF/HTML
+## Export to HTML
 
-Press `x` to export the currently selected file to PDF or HTML.
+Press `x` to export the currently selected file to HTML.
 
-### Formats
-- **PDF**: Requires `weasyprint` package and system dependencies
-  - Install with: `uv pip install 'librarian[pdf]'`
-  - Automatically falls back to HTML if not available
-- **HTML**: Always available, standalone file with embedded CSS
+### Security
+Export includes HTML sanitization to prevent XSS:
+- Document titles are escaped with `html.escape()`
+- Dangerous tags removed: `<script>`, `<iframe>`, `<object>`, `<embed>`, `<form>`, etc.
+- Dangerous attributes removed: `onclick`, `onerror`, `javascript:` URLs, etc.
 
 ### Export Styling
 The `export.py` module includes clean, professional CSS:
@@ -269,7 +271,6 @@ The `export.py` module includes clean, professional CSS:
 - GitHub-style markdown rendering
 - Syntax highlighting support
 - Responsive layout (800px max width)
-- Print-friendly for PDF output
 
 ### Configuration
 Set export destination in config.toml:
@@ -280,5 +281,5 @@ export_directory = "~/Downloads"  # or any other directory
 ### User Experience
 - Press `x` on any file in the file list
 - App shows notification with export path
-- Files are named `{original-stem}.pdf` or `{original-stem}.html`
+- Files are named `{original-stem}.html`
 - Existing files are overwritten
