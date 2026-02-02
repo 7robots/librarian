@@ -2,6 +2,7 @@
 
 import json
 import os
+import threading
 from collections import defaultdict
 from contextlib import contextmanager
 from pathlib import Path
@@ -23,6 +24,9 @@ _index: dict[str, FileEntry] = {}
 # Batch mode: when True, defer saves until batch ends
 _batch_mode: bool = False
 _batch_dirty: bool = False
+
+# Thread lock for index writes to prevent concurrent corruption
+_write_lock = threading.Lock()
 
 
 def _load_index() -> dict[str, FileEntry]:
@@ -47,12 +51,13 @@ def _save_index() -> None:
         _batch_dirty = True
         return
 
-    index_path = get_index_path()
-    index_path.parent.mkdir(parents=True, exist_ok=True)
+    with _write_lock:
+        index_path = get_index_path()
+        index_path.parent.mkdir(parents=True, exist_ok=True)
 
-    temp_path = index_path.with_suffix(".json.tmp")
-    temp_path.write_text(json.dumps({"files": _index}, indent=2))
-    os.replace(temp_path, index_path)
+        temp_path = index_path.with_suffix(".json.tmp")
+        temp_path.write_text(json.dumps({"files": _index}, indent=2))
+        os.replace(temp_path, index_path)
 
 
 @contextmanager
@@ -71,12 +76,13 @@ def batch_writes() -> Generator[None, None, None]:
         _batch_mode = False
         if _batch_dirty:
             _batch_dirty = False
-            # Force save now
-            index_path = get_index_path()
-            index_path.parent.mkdir(parents=True, exist_ok=True)
-            temp_path = index_path.with_suffix(".json.tmp")
-            temp_path.write_text(json.dumps({"files": _index}, indent=2))
-            os.replace(temp_path, index_path)
+            # Force save now with lock protection
+            with _write_lock:
+                index_path = get_index_path()
+                index_path.parent.mkdir(parents=True, exist_ok=True)
+                temp_path = index_path.with_suffix(".json.tmp")
+                temp_path.write_text(json.dumps({"files": _index}, indent=2))
+                os.replace(temp_path, index_path)
 
 
 def init_database() -> None:

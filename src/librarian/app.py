@@ -13,10 +13,16 @@ from textual.widgets import Footer, Header, Static
 from textual.worker import Worker, get_current_worker
 
 from .config import Config
-from .database import get_all_tags, get_files_by_tag, init_database, resolve_wiki_link
+from .database import (
+    get_all_tags,
+    get_files_by_tag,
+    init_database,
+    remove_file,
+    resolve_wiki_link,
+)
 from .export import export_markdown
 from .navigation import NavigationStack, NavigationState
-from .scanner import scan_directory
+from .scanner import rescan_file, scan_directory
 from .watcher import FileWatcher
 from .widgets import RenameModal, MoveModal, FileList, Preview, TagList, load_file_content
 
@@ -413,8 +419,19 @@ class LibrarianApp(App):
         if action == "renamed":
             self.notify(f"Renamed to {new_path.name}")
 
-        # Trigger a rescan to update the index
-        self.run_worker(self._background_full_rescan, exclusive=True, thread=True)
+        # Update index with targeted changes instead of full rescan
+        remove_file(old_path)
+        rescan_file(new_path, self.config)
+
+        # Refresh UI
+        self._refresh_tags()
+        tag_list = self.query_one("#tag-list", TagList)
+        selected_tag = tag_list.get_selected_tag()
+        if selected_tag:
+            files = get_files_by_tag(selected_tag)
+            file_paths = [f[0] for f in files]
+            file_list = self.query_one("#file-list", FileList)
+            file_list.update_files(file_paths, selected_tag)
 
     def action_move_file(self) -> None:
         """Show move modal for the currently selected file."""
@@ -435,8 +452,19 @@ class LibrarianApp(App):
         if action == "moved":
             self.notify(f"Moved to {new_path.parent}")
 
-        # Trigger a rescan to update the index
-        self.run_worker(self._background_full_rescan, exclusive=True, thread=True)
+        # Update index with targeted changes instead of full rescan
+        remove_file(old_path)
+        rescan_file(new_path, self.config)
+
+        # Refresh UI
+        self._refresh_tags()
+        tag_list = self.query_one("#tag-list", TagList)
+        selected_tag = tag_list.get_selected_tag()
+        if selected_tag:
+            files = get_files_by_tag(selected_tag)
+            file_paths = [f[0] for f in files]
+            file_list = self.query_one("#file-list", FileList)
+            file_list.update_files(file_paths, selected_tag)
 
     def action_export(self) -> None:
         """Export the currently previewed file to PDF or HTML."""

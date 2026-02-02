@@ -10,9 +10,6 @@ dependencies = [
     "markdown>=3.5.0",
 ]
 
-[project.optional-dependencies]
-pdf = ["weasyprint>=60.0"]
-
 [project.scripts]
 librarian = "librarian.__main__:main"
 

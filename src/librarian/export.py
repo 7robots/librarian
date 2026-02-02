@@ -1,8 +1,37 @@
-"""Export markdown files to PDF or HTML."""
+"""Export markdown files to HTML."""
 
+import html
+import re
 from pathlib import Path
 
 import markdown
+
+
+# Pattern to match dangerous HTML tags (script, iframe, object, embed, etc.)
+_DANGEROUS_TAGS_PATTERN = re.compile(
+    r"<\s*(script|iframe|object|embed|form|input|button|textarea|select|style|link|meta|base)[^>]*>.*?</\s*\1\s*>|"
+    r"<\s*(script|iframe|object|embed|form|input|button|textarea|select|style|link|meta|base)[^>]*/?\s*>",
+    re.IGNORECASE | re.DOTALL,
+)
+
+# Pattern to match dangerous attributes (onclick, onerror, javascript:, etc.)
+_DANGEROUS_ATTRS_PATTERN = re.compile(
+    r'\s(on\w+|href\s*=\s*["\']?\s*javascript:|src\s*=\s*["\']?\s*javascript:)[^>]*',
+    re.IGNORECASE,
+)
+
+
+def _sanitize_html(html_content: str) -> str:
+    """Remove dangerous HTML tags and attributes from content.
+
+    This is a simple sanitizer that removes known dangerous elements.
+    For comprehensive sanitization, consider using the 'bleach' library.
+    """
+    # Remove dangerous tags
+    result = _DANGEROUS_TAGS_PATTERN.sub("", html_content)
+    # Remove dangerous attributes
+    result = _DANGEROUS_ATTRS_PATTERN.sub(" ", result)
+    return result
 
 
 # CSS styling for exported documents
@@ -111,13 +140,19 @@ def markdown_to_html(content: str, title: str = "Document") -> str:
     )
     html_body = md.convert(content)
 
+    # Sanitize the HTML body to remove dangerous tags/attributes
+    html_body = _sanitize_html(html_body)
+
+    # Escape title to prevent injection into <title> tag
+    safe_title = html.escape(title)
+
     # Build complete HTML document
-    html = f"""<!DOCTYPE html>
+    html_doc = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{title}</title>
+    <title>{safe_title}</title>
     <style>
 {EXPORT_CSS}
     </style>
@@ -127,7 +162,7 @@ def markdown_to_html(content: str, title: str = "Document") -> str:
 </body>
 </html>
 """
-    return html
+    return html_doc
 
 
 def export_to_html(source_path: Path, export_dir: Path) -> Path:
@@ -155,68 +190,15 @@ def export_to_html(source_path: Path, export_dir: Path) -> Path:
     return output_path
 
 
-def export_to_pdf(source_path: Path, export_dir: Path) -> Path:
-    """Export a markdown file to PDF using weasyprint.
+def export_markdown(source_path: Path, export_dir: Path) -> tuple[Path, str]:
+    """Export a markdown file to HTML.
 
     Args:
         source_path: Path to the markdown file
         export_dir: Directory to export to
 
     Returns:
-        Path to the exported PDF file
-
-    Raises:
-        ImportError: If weasyprint is not installed
+        Tuple of (output_path, format) where format is "html"
     """
-    try:
-        from weasyprint import HTML
-    except ImportError:
-        raise ImportError(
-            "weasyprint is required for PDF export. "
-            "Install with: pip install 'librarian[pdf]'"
-        )
-
-    # Read markdown content
-    content = source_path.read_text(encoding="utf-8")
-
-    # Convert to HTML
-    title = source_path.stem
-    html = markdown_to_html(content, title)
-
-    # Convert HTML to PDF
-    export_dir.mkdir(parents=True, exist_ok=True)
-    output_path = export_dir / f"{source_path.stem}.pdf"
-
-    HTML(string=html).write_pdf(output_path)
-
-    return output_path
-
-
-def export_markdown(
-    source_path: Path,
-    export_dir: Path,
-    prefer_pdf: bool = True,
-) -> tuple[Path, str]:
-    """Export a markdown file to PDF or HTML.
-
-    Attempts PDF export first if prefer_pdf is True, falls back to HTML
-    if weasyprint is not available.
-
-    Args:
-        source_path: Path to the markdown file
-        export_dir: Directory to export to
-        prefer_pdf: Whether to prefer PDF over HTML
-
-    Returns:
-        Tuple of (output_path, format) where format is "pdf" or "html"
-    """
-    if prefer_pdf:
-        try:
-            output_path = export_to_pdf(source_path, export_dir)
-            return output_path, "pdf"
-        except ImportError:
-            # Fall back to HTML
-            pass
-
     output_path = export_to_html(source_path, export_dir)
     return output_path, "html"
