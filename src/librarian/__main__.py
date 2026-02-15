@@ -14,7 +14,7 @@ def main() -> int:
         config = Config.load()
 
         # Initialize database
-        init_database()
+        init_database(config.get_index_path())
 
         # Run the application
         run_app(config)

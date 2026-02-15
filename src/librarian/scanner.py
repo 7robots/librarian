@@ -76,7 +76,7 @@ def scan_directory(config: Config, full_rescan: bool = False) -> tuple[int, int,
     Returns:
         Tuple of (added, updated, removed) file counts
     """
-    init_database()
+    init_database(config.get_index_path())
 
     scan_dir = config.scan_directory
     markdown_files = find_markdown_files(scan_dir)

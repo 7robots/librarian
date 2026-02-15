@@ -109,7 +109,7 @@ class LibrarianApp(App):
     async def on_mount(self) -> None:
         """Initialize the app after mounting."""
         # Load existing index immediately for fast startup
-        init_database()
+        init_database(self.config.get_index_path())
         self._refresh_tags()
 
         # Focus the appropriate tag list initially

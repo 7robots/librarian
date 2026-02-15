@@ -8,9 +8,6 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator, TypedDict
 
-from .config import get_index_path
-
-
 class FileEntry(TypedDict):
     """Type for a file entry in the index."""
 
@@ -21,6 +18,9 @@ class FileEntry(TypedDict):
 # In-memory index cache
 _index: dict[str, FileEntry] = {}
 
+# Configured index file path
+_index_path: Path | None = None
+
 # Batch mode: when True, defer saves until batch ends
 _batch_mode: bool = False
 _batch_dirty: bool = False
@@ -29,9 +29,16 @@ _batch_dirty: bool = False
 _write_lock = threading.Lock()
 
 
+def _get_index_path() -> Path:
+    """Get the configured index path."""
+    if _index_path is None:
+        raise RuntimeError("Database not initialized. Call init_database() first.")
+    return _index_path
+
+
 def _load_index() -> dict[str, FileEntry]:
     """Load index from JSON file."""
-    index_path = get_index_path()
+    index_path = _get_index_path()
     if not index_path.exists():
         return {}
 
@@ -52,7 +59,7 @@ def _save_index() -> None:
         return
 
     with _write_lock:
-        index_path = get_index_path()
+        index_path = _get_index_path()
         index_path.parent.mkdir(parents=True, exist_ok=True)
 
         temp_path = index_path.with_suffix(".json.tmp")
@@ -78,16 +85,21 @@ def batch_writes() -> Generator[None, None, None]:
             _batch_dirty = False
             # Force save now with lock protection
             with _write_lock:
-                index_path = get_index_path()
+                index_path = _get_index_path()
                 index_path.parent.mkdir(parents=True, exist_ok=True)
                 temp_path = index_path.with_suffix(".json.tmp")
                 temp_path.write_text(json.dumps({"files": _index}, indent=2))
                 os.replace(temp_path, index_path)
 
 
-def init_database() -> None:
-    """Initialize the index by loading from JSON file."""
-    global _index
+def init_database(index_path: Path) -> None:
+    """Initialize the index by loading from JSON file.
+
+    Args:
+        index_path: Path to the index.json file.
+    """
+    global _index, _index_path
+    _index_path = index_path
     _index = _load_index()
 
 

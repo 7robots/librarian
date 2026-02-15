@@ -11,7 +11,7 @@ src/librarian/
 ├── __init__.py          # Package version
 ├── __main__.py          # Entry point, initializes app
 ├── app.py               # Main Textual App with layout and keybindings
-├── config.py            # TOML config loading from ~/Documents/librarian/
+├── config.py            # TOML config loading from ~/.config/librarian/
 ├── database.py          # JSON index operations (in-memory + file persistence)
 ├── scanner.py           # File scanning & hashtag extraction
 ├── watcher.py           # File system watcher using watchdog
@@ -28,9 +28,8 @@ src/librarian/
 
 ## Key Design Decisions
 
-- **Config/Data location**: `~/Documents/librarian/` (iCloud syncable)
-- **Config format**: TOML at `~/Documents/librarian/config.toml`
-- **Index storage**: JSON at `~/Documents/librarian/index.json` (iCloud-friendly atomic writes)
+- **Config location**: `~/.config/librarian/config.toml` (XDG standard)
+- **Index storage**: JSON at configurable `data_directory` (default: `~/.local/share/librarian/`). Atomic writes for iCloud compatibility.
 - **Tag format**: Inline hashtags matching `#[a-zA-Z][a-zA-Z0-9_-]*`
 - **Auto-refresh**: watchdog monitors scan directory with debouncing
 - **Favorites**: Tags in config whitelist appear in dedicated Favorites panel
@@ -85,8 +84,10 @@ async with app.run_test(size=(80, 24)) as pilot:
 ### Checking index state
 ```bash
 uv run python -c "
+from librarian.config import Config
 from librarian.database import init_database, get_all_tags, get_all_files
-init_database()
+config = Config.load()
+init_database(config.get_index_path())
 print(f'Tags: {len(get_all_tags())}')
 print(f'Files: {len(get_all_files())}')
 "
@@ -94,7 +95,7 @@ print(f'Files: {len(get_all_files())}')
 
 ### Viewing raw index
 ```bash
-cat ~/Documents/librarian/index.json
+cat \$(uv run python -c "from librarian.config import Config; print(Config.load().get_index_path())")
 ```
 
 ## Widget Communication
@@ -150,6 +151,7 @@ class Config:
     editor: str
     tags: TagConfig
     export_directory: Path  # Default: ~/Downloads
+    data_directory: Path    # Default: ~/.local/share/librarian
 ```
 
 ## Performance Features
@@ -273,7 +275,7 @@ The `export.py` module includes clean, professional CSS:
 - Responsive layout (800px max width)
 
 ### Configuration
-Set export destination in config.toml:
+Set export destination in config.toml (`~/.config/librarian/config.toml`):
 ```toml
 export_directory = "~/Downloads"  # or any other directory
 ```
