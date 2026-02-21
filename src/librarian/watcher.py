@@ -31,9 +31,9 @@ class MarkdownEventHandler(FileSystemEventHandler):
         self._lock = threading.Lock()
         self._timer: threading.Timer | None = None
 
-    def _is_markdown(self, path: str) -> bool:
-        """Check if the path is a markdown file."""
-        return path.endswith(".md")
+    def _is_supported_file(self, path: str) -> bool:
+        """Check if the path is a supported file type."""
+        return path.endswith(".md") or path.endswith(".taskpaper")
 
     def _schedule_update(self, path: str) -> None:
         """Schedule a debounced update for the given path."""
@@ -75,27 +75,27 @@ class MarkdownEventHandler(FileSystemEventHandler):
 
     def on_created(self, event: FileSystemEvent) -> None:
         """Handle file creation."""
-        if not event.is_directory and self._is_markdown(event.src_path):
+        if not event.is_directory and self._is_supported_file(event.src_path):
             self._schedule_update(event.src_path)
 
     def on_modified(self, event: FileSystemEvent) -> None:
         """Handle file modification."""
-        if not event.is_directory and self._is_markdown(event.src_path):
+        if not event.is_directory and self._is_supported_file(event.src_path):
             self._schedule_update(event.src_path)
 
     def on_deleted(self, event: FileSystemEvent) -> None:
         """Handle file deletion."""
-        if not event.is_directory and self._is_markdown(event.src_path):
+        if not event.is_directory and self._is_supported_file(event.src_path):
             self._schedule_update(event.src_path)
 
     def on_moved(self, event: FileSystemEvent) -> None:
         """Handle file move/rename."""
         if not event.is_directory:
             # Handle source path (old location)
-            if self._is_markdown(event.src_path):
+            if self._is_supported_file(event.src_path):
                 self._schedule_update(event.src_path)
             # Handle destination path (new location)
-            if hasattr(event, "dest_path") and self._is_markdown(event.dest_path):
+            if hasattr(event, "dest_path") and self._is_supported_file(event.dest_path):
                 self._schedule_update(event.dest_path)
 
 

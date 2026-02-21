@@ -8,6 +8,7 @@ from textual.containers import Vertical, VerticalScroll
 from textual.message import Message
 from textual.widgets import Markdown, Static
 
+from ..taskpaper import taskpaper_to_markdown
 from ..wikilink import extract_wiki_target, is_wiki_link, preprocess_wiki_links
 
 
@@ -82,10 +83,15 @@ def load_file_content(file_path: Path) -> tuple[str | None, str | None]:
         If successful, error_message is None.
         If failed, processed_content is None and error_message contains the error.
     """
+    is_taskpaper = file_path.suffix.lower() == ".taskpaper"
+
     # Try to get from cache first (includes mtime check via stat)
     content = _file_cache.get(file_path)
     if content is not None:
-        processed_content = preprocess_wiki_links(content)
+        if is_taskpaper:
+            processed_content = taskpaper_to_markdown(content)
+        else:
+            processed_content = preprocess_wiki_links(content)
         return (processed_content, None)
 
     # Read from disk and cache
@@ -93,7 +99,10 @@ def load_file_content(file_path: Path) -> tuple[str | None, str | None]:
         mtime = file_path.stat().st_mtime
         content = file_path.read_text(encoding="utf-8")
         _file_cache.put(file_path, mtime, content)
-        processed_content = preprocess_wiki_links(content)
+        if is_taskpaper:
+            processed_content = taskpaper_to_markdown(content)
+        else:
+            processed_content = preprocess_wiki_links(content)
         return (processed_content, None)
     except (OSError, UnicodeDecodeError) as e:
         return (None, f"*Error reading file: {e}*")

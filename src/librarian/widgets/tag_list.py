@@ -20,8 +20,8 @@ class MarkdownDirectoryTree(DirectoryTree):
                 # Skip hidden directories
                 if not path.name.startswith("."):
                     yield path
-            # Only show markdown files
-            elif path.suffix.lower() == ".md":
+            # Only show supported files
+            elif path.suffix.lower() in (".md", ".taskpaper"):
                 yield path
 
 
@@ -267,8 +267,8 @@ class TagList(Vertical):
 
     def on_directory_tree_file_selected(self, event: DirectoryTree.FileSelected) -> None:
         """Handle file selection from directory tree."""
-        # Only handle markdown files
-        if event.path.suffix.lower() == ".md":
+        # Only handle supported files
+        if event.path.suffix.lower() in (".md", ".taskpaper"):
             self.post_message(self.FileSelected(event.path))
 
     def get_selected_tag(self) -> str | None:

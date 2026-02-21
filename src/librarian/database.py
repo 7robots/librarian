@@ -218,10 +218,11 @@ def resolve_wiki_link(target: str, current_file: Path | None = None) -> Path | N
     # Normalize target - remove leading/trailing whitespace
     target = target.strip()
 
-    # List of targets to try (original and with .md extension)
+    # List of targets to try (original and with extensions)
     targets_to_try = [target]
-    if not target.lower().endswith(".md"):
+    if not target.lower().endswith((".md", ".taskpaper")):
         targets_to_try.append(f"{target}.md")
+        targets_to_try.append(f"{target}.taskpaper")
 
     for try_target in targets_to_try:
         # 1. Try relative to current file's directory

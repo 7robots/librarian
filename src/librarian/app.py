@@ -124,7 +124,7 @@ class LibrarianApp(App):
         self._watcher.start()
 
         # Run initial scan in background worker (thread=True for sync function)
-        self.notify("Scanning for markdown files...")
+        self.notify("Scanning files...")
         self.run_worker(self._background_scan, exclusive=True, thread=True)
 
     def _background_scan(self) -> tuple[int, int, int]:

@@ -6,6 +6,8 @@ from pathlib import Path
 
 import markdown
 
+from .taskpaper import taskpaper_to_markdown
+
 
 # Pattern to match dangerous HTML tags (script, iframe, object, embed, etc.)
 _DANGEROUS_TAGS_PATTERN = re.compile(
@@ -191,14 +193,25 @@ def export_to_html(source_path: Path, export_dir: Path) -> Path:
 
 
 def export_markdown(source_path: Path, export_dir: Path) -> tuple[Path, str]:
-    """Export a markdown file to HTML.
+    """Export a markdown or taskpaper file to HTML.
 
     Args:
-        source_path: Path to the markdown file
+        source_path: Path to the source file
         export_dir: Directory to export to
 
     Returns:
         Tuple of (output_path, format) where format is "html"
     """
+    if source_path.suffix.lower() == ".taskpaper":
+        # Convert taskpaper to markdown first, then export
+        content = source_path.read_text(encoding="utf-8")
+        md_content = taskpaper_to_markdown(content)
+        title = source_path.stem
+        html_content = markdown_to_html(md_content, title)
+        export_dir.mkdir(parents=True, exist_ok=True)
+        output_path = export_dir / f"{source_path.stem}.html"
+        output_path.write_text(html_content, encoding="utf-8")
+        return output_path, "html"
+
     output_path = export_to_html(source_path, export_dir)
     return output_path, "html"

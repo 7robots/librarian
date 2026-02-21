@@ -1,6 +1,6 @@
 # Librarian
 
-A terminal-based markdown tag browser. Librarian scans your markdown files for inline hashtags (`#tag`) and provides a TUI for browsing files by tag.
+A terminal-based tag browser for markdown and taskpaper files. Librarian scans your files for inline hashtags (`#tag`) and provides a TUI for browsing files by tag.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -24,11 +24,12 @@ A terminal-based markdown tag browser. Librarian scans your markdown files for i
 
 ## Features
 
-- **Tag Discovery**: Automatically finds hashtags in markdown files
+- **Tag Discovery**: Automatically finds hashtags in markdown and taskpaper files
 - **Favorites Panel**: Pin frequently-used tags to a dedicated section
 - **Four-Panel UI**: Browse favorites, all tags, files, and preview content
 - **Directory Browser**: Toggle to browse files by folder structure
-- **Live Preview**: Markdown rendered as you navigate
+- **Taskpaper Support**: Index and preview `.taskpaper` files with projects, tasks, and @tags
+- **Live Preview**: Markdown and taskpaper files rendered as you navigate
 - **Search**: Find files by filename or tag with partial matching
 - **Auto-Refresh**: File watcher updates index when files change
 - **Editor Integration**: Press `e` to edit files in your preferred editor
@@ -61,7 +62,7 @@ On first run, Librarian will:
 1. Create config directory at `~/Documents/librarian/`
 2. Generate default config at `~/Documents/librarian/config.toml`
 3. Create JSON index at `~/Documents/librarian/index.json`
-4. Scan `~/Documents` for markdown files with hashtags
+4. Scan `~/Documents` for markdown and taskpaper files with hashtags
 
 ## Keybindings
 
@@ -108,6 +109,21 @@ whitelist = ["project", "todo", "notes"]  # Tags listed here appear in FAVORITES
 ### Favorites
 
 Tags listed in the `whitelist` array appear in the **FAVORITES** panel at the top of the left sidebar for quick access. All discovered tags still appear in the **ALL TAGS** panel below.
+
+## Supported File Types
+
+### Markdown (`.md`)
+Standard markdown files with inline hashtags.
+
+### Taskpaper (`.taskpaper`)
+Plain-text task management files (compatible with [vim-taskpaper](https://github.com/davidoc/taskpaper.vim) and TaskPaper.app). Taskpaper files are indexed by `#hashtags` like markdown files, and the preview renders taskpaper-specific syntax:
+
+- **Projects** (`Project Name:`) → displayed as headings
+- **Tasks** (`- task text`) → displayed as checkboxes
+- **Done tasks** (`- task @done`) → displayed as checked with strikethrough
+- **@tags** (`@due(2024-01-01)`, `@priority(high)`) → highlighted inline
+
+Taskpaper files can also be exported to HTML with `x`.
 
 ## Tag Format
 
@@ -184,7 +200,7 @@ Press `m` to move the currently selected file to a different directory:
 Press `b` to toggle between the All Tags view and a directory browser:
 
 - The browser shows a tree view of your scan directory
-- Only markdown files and directories are displayed
+- Only supported files (`.md`, `.taskpaper`) and directories are displayed
 - Hidden files/directories (starting with `.`) are filtered out
 - Select a file to preview it
 - Press `b` again to return to the All Tags view
@@ -211,7 +227,7 @@ This location was chosen to enable iCloud sync on macOS.
 
 ## How It Works
 
-1. **Scanning**: Recursively finds `*.md` files in the scan directory
+1. **Scanning**: Recursively finds `*.md` and `*.taskpaper` files in the scan directory
 2. **Indexing**: Extracts hashtags using regex, stores in JSON with file modification times
 3. **Watching**: Uses `watchdog` to monitor for file changes with debouncing
 4. **Display**: Textual TUI with four panels - favorites, all tags, files, and markdown preview

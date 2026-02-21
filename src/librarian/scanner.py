@@ -49,20 +49,23 @@ def scan_file(path: Path, config: Config) -> list[str]:
     return tags
 
 
-def find_markdown_files(directory: Path) -> list[Path]:
-    """Recursively find all markdown files in a directory."""
+SUPPORTED_EXTENSIONS = {".md", ".taskpaper"}
+
+
+def find_scannable_files(directory: Path) -> list[Path]:
+    """Recursively find all supported files (.md, .taskpaper) in a directory."""
     if not directory.exists():
         return []
 
-    markdown_files = []
+    files = []
     try:
-        for path in directory.rglob("*.md"):
-            if path.is_file():
-                markdown_files.append(path)
+        for path in directory.rglob("*"):
+            if path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS:
+                files.append(path)
     except PermissionError:
         pass
 
-    return markdown_files
+    return files
 
 
 def scan_directory(config: Config, full_rescan: bool = False) -> tuple[int, int, int]:
@@ -79,10 +82,10 @@ def scan_directory(config: Config, full_rescan: bool = False) -> tuple[int, int,
     init_database(config.get_index_path())
 
     scan_dir = config.scan_directory
-    markdown_files = find_markdown_files(scan_dir)
+    scannable_files = find_scannable_files(scan_dir)
 
     # Track current file paths
-    current_paths = {str(p) for p in markdown_files}
+    current_paths = {str(p) for p in scannable_files}
 
     # Get previously indexed files
     indexed_files = get_all_files()
@@ -101,7 +104,7 @@ def scan_directory(config: Config, full_rescan: bool = False) -> tuple[int, int,
                 removed += 1
 
         # Add or update files
-        for path in markdown_files:
+        for path in scannable_files:
             mtime = path.stat().st_mtime
 
             if str(path) not in indexed_paths:
