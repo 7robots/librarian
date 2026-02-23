@@ -6,37 +6,36 @@ A terminal-based tag browser for markdown and taskpaper files. Librarian scans y
 ┌─────────────────────────────────────────────────────────────┐
 │  Librarian - Markdown Tag Browser                           │
 ├──────────────┬──────────────────────────────────────────────┤
-│  FAVORITES   │  FILES (#project)                            │
+│  ★ TOOLS     │  FILES (#project)                            │
 │              │                                              │
-│ > #project   │  > meeting-notes.md                          │
-│   #todo      │    project-plan.md                           │
-│──────────────│    ideas.md                                  │
+│ > Tags       │  > meeting-notes.md                          │
+│   Folders    │    project-plan.md                           │
+│   TaskPaper  │    ideas.md                                  │
+│   Calendar   │                                              │
+│   Agents     ├──────────────────────────────────────────────┤
+│──────────────│  PREVIEW - meeting-notes.md                  │
 │  ALL TAGS    │                                              │
-│              ├──────────────────────────────────────────────┤
-│   #work      │  PREVIEW - meeting-notes.md                  │
-│   #meeting   │                                              │
-│   #idea      │  # Meeting Notes                             │
-│              │                                              │
-│              │  Today we discussed the #project timeline... │
-│              │                                              │
+│              │  # Meeting Notes                             │
+│   #work      │                                              │
+│   #meeting   │  Today we discussed the #project timeline... │
+│   #idea      │                                              │
 └──────────────┴──────────────────────────────────────────────┘
 ```
 
 ## Features
 
 - **Tag Discovery**: Automatically finds hashtags in markdown and taskpaper files
-- **Favorites Panel**: Pin frequently-used tags to a dedicated section
-- **Four-Panel UI**: Browse favorites, all tags, files, and preview content
-- **Directory Browser**: Toggle to browse files by folder structure
-- **Taskpaper Support**: Index and preview `.taskpaper` files with projects, tasks, and @tags
+- **Tools Sidebar**: Top-level navigation hub with Tags, Folders, TaskPaper, Calendar, and Agents
+- **Directory Browser**: Browse files by folder structure via the Folders tool
+- **TaskPaper Integration**: Dedicated tool that filters to `#taskpaper` tag, creates `.taskpaper` files, and launches TaskPaper TUI for editing
 - **Live Preview**: Markdown and taskpaper files rendered as you navigate
 - **Search**: Find files by filename or tag with partial matching
 - **Auto-Refresh**: File watcher updates index when files change
-- **Editor Integration**: Press `e` to edit files in your preferred editor
-- **File Management**: Rename and move files with keyboard shortcuts
+- **Editor Integration**: Press `e` to edit files in your preferred editor (or TaskPaper TUI for `.taskpaper` files)
+- **File Management**: Rename, move, and delete files with keyboard shortcuts
 - **Wiki Links**: Navigate between notes using `[[note.md]]` syntax
 - **Export**: Export files to HTML with one keypress
-- **File Creation**: Create new notes with automatic tag insertion
+- **File Creation**: Create new notes (`.md` or `.taskpaper` depending on active tool)
 - **Dynamic Layout**: Resize terminal window and UI adapts
 
 ## Installation
@@ -70,11 +69,12 @@ On first run, Librarian will:
 |-----|--------|
 | `q` | Quit |
 | `s` | Search files and tags |
-| `e` | Edit selected file in configured editor |
-| `n` | Create new markdown file with current tag |
+| `e` | Edit selected file (uses TaskPaper TUI for `.taskpaper` files if configured) |
+| `n` | Create new file (`.taskpaper` when TaskPaper tool active, `.md` otherwise) |
+| `d` | Delete selected file (press twice to confirm) |
 | `r` | Rename selected file |
 | `m` | Move selected file to different directory |
-| `b` | Toggle browse mode (directory tree vs all tags) |
+| `t` | Select TaskPaper tool (auto-selects #taskpaper tag) |
 | `x` | Export selected file to HTML |
 | `u` | Update/rescan all files |
 | `Tab` | Cycle focus between panels (clockwise) |
@@ -84,7 +84,7 @@ On first run, Librarian will:
 | `Escape` | Navigate back / exit search |
 | `?` | Show help |
 
-Tab order follows a clockwise pattern: Favorites → Files → Preview → All Tags (or Browse).
+Tab order follows a clockwise pattern: Tools → Files → Preview → All Tags.
 
 ## Configuration
 
@@ -97,18 +97,22 @@ scan_directory = "~/Documents"
 # Editor command for editing files (e.g., "vim", "code", "nano")
 editor = "vim"
 
+# TaskPaper TUI executable for editing .taskpaper files
+# Leave empty to use the default editor instead
+taskpaper = "taskpapertui"
+
 # Directory for exported HTML files
 export_directory = "~/Downloads"
 
 # Tag filtering
 [tags]
 mode = "all"  # "all" shows all discovered tags, "whitelist" filters to specific tags
-whitelist = ["project", "todo", "notes"]  # Tags listed here appear in FAVORITES panel
+whitelist = ["project", "todo", "notes"]  # Used when mode = "whitelist"
 ```
 
-### Favorites
+### TaskPaper Integration
 
-Tags listed in the `whitelist` array appear in the **FAVORITES** panel at the top of the left sidebar for quick access. All discovered tags still appear in the **ALL TAGS** panel below.
+When `taskpaper` is set in the config, pressing `e` on a `.taskpaper` file will launch the specified TaskPaper TUI instead of the default editor. This allows a seamless workflow: select TaskPaper from the Tools menu (or press `t`), browse your `.taskpaper` files, and edit them in a dedicated TaskPaper editor.
 
 ## Supported File Types
 
@@ -164,14 +168,12 @@ The navigation preserves your context, returning you to the exact tag and file p
 
 ## Creating New Files
 
-Press `n` while viewing a tag to create a new markdown file:
+Press `n` to create a new file:
 
-1. A dialog appears with a suggested filename based on the current tag
-2. Edit the filename or press Enter to accept
-3. A new file is created with a template including the current tag
-4. The file opens automatically in your configured editor
+- **With Tags or Folders tool active**: Creates a `.md` file with a template including the current tag
+- **With TaskPaper tool active**: Creates a `.taskpaper` file with an `Inbox:` project and `#taskpaper` tag
 
-This makes it easy to quickly capture new notes within your existing tag structure.
+The new file opens automatically in the appropriate editor.
 
 ## File Management
 
@@ -197,15 +199,21 @@ Press `m` to move the currently selected file to a different directory:
 
 ## Directory Browser
 
-Press `b` to toggle between the All Tags view and a directory browser:
+Select **Folders** from the Tools menu to browse files by directory:
 
-- The browser shows a tree view of your scan directory
+- Shows a tree view of your scan directory
 - Only supported files (`.md`, `.taskpaper`) and directories are displayed
 - Hidden files/directories (starting with `.`) are filtered out
 - Select a file to preview it
-- Press `b` again to return to the All Tags view
+- Select **Tags** from the Tools menu to return to tag browsing
 
-This is useful for browsing files by location rather than by tag.
+## Deleting Files
+
+Press `d` to delete the currently selected file:
+
+1. First press shows a confirmation warning
+2. Press `d` again within 3 seconds to confirm deletion
+3. The file is removed from disk and the index is updated
 
 ## Exporting Files
 
@@ -230,7 +238,7 @@ This location was chosen to enable iCloud sync on macOS.
 1. **Scanning**: Recursively finds `*.md` and `*.taskpaper` files in the scan directory
 2. **Indexing**: Extracts hashtags using regex, stores in JSON with file modification times
 3. **Watching**: Uses `watchdog` to monitor for file changes with debouncing
-4. **Display**: Textual TUI with four panels - favorites, all tags, files, and markdown preview
+4. **Display**: Textual TUI with Tools sidebar, tag/folder browser, file list, and markdown preview
 
 ## Development
 

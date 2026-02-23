@@ -153,6 +153,11 @@ class FileList(Vertical):
         if event.item is not None and isinstance(event.item, FileItem):
             self.post_message(self.FileHighlighted(event.item.file_path))
 
+    def on_list_view_selected(self, event: ListView.Selected) -> None:
+        """Handle file selection (click or Enter on already-highlighted item)."""
+        if event.item is not None and isinstance(event.item, FileItem):
+            self.post_message(self.FileHighlighted(event.item.file_path))
+
     def get_selected_file(self) -> Path | None:
         """Get the currently highlighted file path."""
         list_view = self.list_view

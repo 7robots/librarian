@@ -1,7 +1,6 @@
 """Main Textual application for Librarian."""
 
 import subprocess
-import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -25,6 +24,7 @@ from .navigation import NavigationStack, NavigationState
 from .scanner import rescan_file, scan_directory
 from .watcher import FileWatcher
 from .widgets import RenameModal, MoveModal, FileList, Preview, TagList, load_file_content
+from .widgets.tag_list import TagItem
 
 
 class LibrarianApp(App):
@@ -70,16 +70,17 @@ class LibrarianApp(App):
         Binding("tab", "focus_next", "Next Panel", show=False),
         Binding("shift+tab", "focus_previous", "Prev Panel", show=False),
         Binding("r", "rename_file", "Rename"),
+        Binding("d", "delete_file", "Delete"),
         Binding("m", "move_file", "Move"),
-        Binding("b", "toggle_browse", "Browse"),
+        Binding("t", "launch_taskpaper", "TaskPaper", show=False),
         Binding("x", "export", "Export"),
         Binding("?", "help", "Help"),
         Binding("escape", "go_back", "Back", show=False),
     ]
 
-    # Custom focus order: favorites -> files -> preview -> all tags (clockwise)
+    # Custom focus order: tools -> files -> preview -> all tags (clockwise)
     FOCUS_ORDER = [
-        "favorites-list-view",
+        "tools-list-view",
         "file-list-view",
         "preview",
         "all-tags-list-view",
@@ -112,12 +113,9 @@ class LibrarianApp(App):
         init_database(self.config.get_index_path())
         self._refresh_tags()
 
-        # Focus the appropriate tag list initially
+        # Focus the tools list initially
         tag_list = self.query_one("#tag-list", TagList)
-        if self.config.tags.whitelist:
-            tag_list.favorites_list_view.focus()
-        else:
-            tag_list.all_tags_list_view.focus()
+        tag_list.tools_list_view.focus()
 
         # Start file watcher
         self._watcher = FileWatcher(self.config, self._on_file_change)
@@ -199,7 +197,6 @@ class LibrarianApp(App):
         """Refresh the tag list from the database."""
         tags = get_all_tags()
         tag_list = self.query_one("#tag-list", TagList)
-        tag_list.set_favorites(self.config.tags.whitelist)
         tag_list.update_tags(tags)
 
     def _on_file_change(self) -> None:
@@ -293,12 +290,9 @@ class LibrarianApp(App):
     def _get_focus_widget(self, widget_id: str):
         """Get a focusable widget by ID."""
         tag_list = self.query_one("#tag-list", TagList)
-        if widget_id == "favorites-list-view":
-            return tag_list.favorites_list_view
+        if widget_id == "tools-list-view":
+            return tag_list.tools_list_view
         elif widget_id == "all-tags-list-view":
-            # Return directory tree if in browse mode
-            if tag_list.is_browse_mode:
-                return tag_list.directory_tree
             return tag_list.all_tags_list_view
         elif widget_id == "file-list-view":
             return self.query_one("#file-list", FileList).list_view
@@ -317,7 +311,7 @@ class LibrarianApp(App):
         preview = self.query_one("#preview", Preview)
 
         focus_map = {
-            id(tag_list.favorites_list_view): 0,
+            id(tag_list.tools_list_view): 0,
             id(file_list.list_view): 1,
             id(preview.scroll_view): 2,
             id(tag_list.all_tags_list_view): 3,
@@ -352,35 +346,41 @@ class LibrarianApp(App):
             self.notify("No file selected", severity="warning")
 
     async def action_new_file(self) -> None:
-        """Create a new markdown file with template."""
-        # Get current tag from file list (if any)
+        """Create a new file. Uses .taskpaper when TaskPaper tool is active, .md otherwise."""
+        tag_list = self.query_one("#tag-list", TagList)
         file_list = self.query_one("#file-list", FileList)
         tag, _, _ = file_list.get_navigation_info()
 
-        # Generate default filename with timestamp
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        filename = f"new-note-{timestamp}.md"
-        file_path = self.config.scan_directory / filename
 
-        # Create template content
-        lines = ["# Title", ""]
-        if tag:
-            lines.append(f"#{tag}")
-            lines.append("")
-        content = "\n".join(lines)
+        if tag_list.active_tool == "taskpaper":
+            filename = f"new-note-{timestamp}.taskpaper"
+            file_path = self.config.scan_directory / filename
+            content = "Inbox:\n\t- \n\n#taskpaper\n"
+        else:
+            filename = f"new-note-{timestamp}.md"
+            file_path = self.config.scan_directory / filename
+            lines = ["# Title", ""]
+            if tag:
+                lines.append(f"#{tag}")
+                lines.append("")
+            content = "\n".join(lines)
 
-        # Write template to file
         file_path.write_text(content, encoding="utf-8")
-
-        # Open in editor
         await self._edit_file(file_path)
 
         # Trigger a rescan to pick up the new file
         self.run_worker(self._background_full_rescan, exclusive=True, thread=True)
 
     async def _edit_file(self, file_path: Path) -> None:
-        """Open a file in the configured editor."""
-        editor = self.config.editor
+        """Open a file in the configured editor.
+
+        For .taskpaper files, uses the taskpaper editor if configured.
+        """
+        if file_path.suffix == ".taskpaper" and self.config.taskpaper:
+            editor = self.config.taskpaper
+        else:
+            editor = self.config.editor
 
         # Suspend the TUI and run the editor
         with self.suspend():
@@ -466,6 +466,50 @@ class LibrarianApp(App):
             file_list = self.query_one("#file-list", FileList)
             file_list.update_files(file_paths, selected_tag)
 
+    def action_delete_file(self) -> None:
+        """Delete the currently selected file after confirmation."""
+        file_list = self.query_one("#file-list", FileList)
+        file_path = file_list.get_selected_file()
+        if not file_path:
+            self.notify("No file selected", severity="warning")
+            return
+
+        # Use a simple confirmation via notify + delayed action pattern
+        # We'll store the pending delete and require a second press
+        if getattr(self, "_pending_delete", None) == file_path:
+            # Second press — confirmed, delete the file
+            self._pending_delete = None
+            try:
+                file_path.unlink()
+            except OSError as e:
+                self.notify(f"Error deleting file: {e}", severity="error")
+                return
+
+            self.notify(f"Deleted {file_path.name}")
+
+            # Remove from index and refresh UI
+            remove_file(file_path)
+            self._refresh_tags()
+
+            tag_list = self.query_one("#tag-list", TagList)
+            selected_tag = tag_list.get_selected_tag()
+            if selected_tag:
+                files = get_files_by_tag(selected_tag)
+                file_paths = [f[0] for f in files]
+                file_list.update_files(file_paths, selected_tag)
+
+            # Clear preview
+            preview = self.query_one("#preview", Preview)
+            preview.query_one("#preview-header", Static).update("PREVIEW")
+        else:
+            # First press — ask for confirmation
+            self._pending_delete = file_path
+            self.notify(
+                f"Press d again to delete {file_path.name}",
+                severity="warning",
+                timeout=3,
+            )
+
     def action_export(self) -> None:
         """Export the currently previewed file to PDF or HTML."""
         preview = self.query_one("#preview", Preview)
@@ -487,12 +531,33 @@ class LibrarianApp(App):
         """Handle export completion."""
         self.notify(f"Exported to {output_path.name} ({fmt.upper()})", timeout=5)
 
-    def action_toggle_browse(self) -> None:
-        """Toggle between All Tags and Browse mode."""
+    def _select_taskpaper_tag(self) -> None:
+        """Select the #taskpaper tag and show its files."""
         tag_list = self.query_one("#tag-list", TagList)
-        tag_list.toggle_browse_mode()
-        mode = "Browse" if tag_list.is_browse_mode else "Tags"
-        self.notify(f"Switched to {mode} mode")
+        tag_list._switch_panel("tags")
+        tag_list.active_tool = "taskpaper"
+
+        # Find and select the taskpaper tag in the all-tags list
+        all_list = tag_list.all_tags_list_view
+        for i, item in enumerate(all_list.children):
+            if isinstance(item, TagItem) and item.tag_name.lower() == "taskpaper":
+                all_list.index = i
+                # Post the tag selected message to trigger file list update
+                tag_list.post_message(TagList.TagSelected("taskpaper"))
+                return
+
+        self.notify("No #taskpaper tag found in index", severity="warning")
+
+    def action_launch_taskpaper(self) -> None:
+        """Select the #taskpaper tag via the `t` keybinding."""
+        self._select_taskpaper_tag()
+
+    def on_tag_list_tool_launched(self, event: TagList.ToolLaunched) -> None:
+        """Handle tool launches from the Tools menu."""
+        if event.tool_name == "taskpaper":
+            self._select_taskpaper_tag()
+        elif event.tool_name in ("calendar", "agents"):
+            self.notify(f"{event.tool_name.title()} \u2014 coming soon")
 
     async def on_tag_list_file_selected(self, event: TagList.FileSelected) -> None:
         """Handle file selection from directory browser."""
@@ -515,7 +580,7 @@ class LibrarianApp(App):
     def action_help(self) -> None:
         """Show help information."""
         self.notify(
-            "s=Search, n=New, e=Edit, x=Export, r=Rename, m=Move, b=Browse, u=Update, q=Quit",
+            "s=Search, n=New, e=Edit, d=Delete, x=Export, r=Rename, m=Move, t=TaskPaper, u=Update, q=Quit",
             timeout=5,
         )
 
@@ -528,12 +593,9 @@ class LibrarianApp(App):
     def on_file_list_search_mode_exited(
         self, event: FileList.SearchModeExited
     ) -> None:
-        """Handle search mode exit - restore focus to tag list."""
+        """Handle search mode exit - restore focus to tools list."""
         tag_list = self.query_one("#tag-list", TagList)
-        if self.config.tags.whitelist:
-            tag_list.favorites_list_view.focus()
-        else:
-            tag_list.all_tags_list_view.focus()
+        tag_list.tools_list_view.focus()
 
     async def on_preview_wiki_link_clicked(
         self, event: Preview.WikiLinkClicked

@@ -35,6 +35,7 @@ class Config:
 
     scan_directory: Path = field(default_factory=lambda: Path.home() / "Documents")
     editor: str = "vim"
+    taskpaper: str = ""
     tags: TagConfig = field(default_factory=TagConfig)
     export_directory: Path = field(default_factory=lambda: Path.home() / "Downloads")
     data_directory: Path = field(default_factory=get_default_data_dir)
@@ -70,6 +71,9 @@ class Config:
         # Parse editor
         editor = data.get("editor", "vim")
 
+        # Parse taskpaper editor path
+        taskpaper = data.get("taskpaper", "")
+
         # Parse tags config
         tags_data = data.get("tags", {})
         tags = TagConfig(
@@ -88,6 +92,7 @@ class Config:
         config = cls(
             scan_directory=scan_directory,
             editor=editor,
+            taskpaper=taskpaper,
             tags=tags,
             export_directory=export_directory,
             data_directory=data_directory,
@@ -112,6 +117,10 @@ class Config:
             '',
             '# Editor command for editing files',
             f'editor = "{self.editor}"',
+            '',
+            '# TaskPaper TUI executable for editing .taskpaper files',
+            '# e.g. taskpaper = "taskpapertui"',
+            f'taskpaper = "{self.taskpaper}"',
             '',
             '# Directory for exported files (PDF/HTML)',
             f'export_directory = "{self.export_directory}"',

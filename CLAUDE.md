@@ -20,7 +20,7 @@ src/librarian/
 ├── export.py            # Export to HTML functionality (with sanitization)
 └── widgets/
     ├── __init__.py
-    ├── tag_list.py      # Split panel: Favorites + All Tags/Browse (with DirectoryTree)
+    ├── tag_list.py      # Tools sidebar (top) + switchable content panel (Tags/Folders/placeholders)
     ├── file_list.py     # Files with selected tag (ListView + navigation mode)
     ├── file_info.py     # RenameModal and MoveModal for file operations
     └── preview.py       # Markdown preview pane (VerticalScroll + Markdown)
@@ -32,7 +32,7 @@ src/librarian/
 - **Index storage**: JSON at configurable `data_directory` (default: `~/.local/share/librarian/`). Atomic writes for iCloud compatibility.
 - **Tag format**: Inline hashtags matching `#[a-zA-Z][a-zA-Z0-9_-]*`
 - **Auto-refresh**: watchdog monitors scan directory with debouncing
-- **Favorites**: Tags in config whitelist appear in dedicated Favorites panel
+- **Tools sidebar**: Top-level navigation hub with Tools menu (Tags, Folders, TaskPaper, Calendar, Agents) and switchable content panel
 - **Wiki links**: `[[note.md]]` or `[[note|display text]]` syntax, preprocessed to `wikilink:` scheme
 - **Export**: HTML export with configurable output directory (sanitized output)
 
@@ -54,11 +54,11 @@ Denormalized structure with tags inline per file. Only files containing at least
 ## UI Layout
 
 The app has four panels:
-- **Left sidebar** (25% width): Split into Favorites (top) and All Tags or Browse (bottom)
+- **Left sidebar** (25% width): Tools menu (30% height) and switchable content panel (70% height)
+  - Tools menu: Tags, Folders, TaskPaper, Calendar, Agents
+  - Content panel switches between: All Tags (ListView), Folders (DirectoryTree), or placeholder text
 - **Right top** (33% height): File list for selected tag
 - **Right bottom** (67% height): Markdown preview
-
-The bottom-left panel toggles between All Tags (ListView) and Browse mode (DirectoryTree) with `b`.
 
 Layout uses percentage-based CSS for dynamic terminal resizing.
 
@@ -100,9 +100,11 @@ cat \$(uv run python -c "from librarian.config import Config; print(Config.load(
 
 ## Widget Communication
 
-- `TagList` contains Favorites ListView, All Tags ListView, and DirectoryTree (browse mode)
+- `TagList` contains Tools ListView, All Tags ListView, DirectoryTree, and placeholder Static
+  - Tracks `active_tool` property (`"tags"`, `"folders"`, `"taskpaper"`, `"calendar"`, `"agents"`)
   - Emits `TagSelected` when a tag is selected
-  - Emits `FileSelected` when a file is selected in browse mode
+  - Emits `FileSelected` when a file is selected in folder browser
+  - Emits `ToolLaunched` when a tool (e.g. TaskPaper) is selected from Tools menu
 - `FileList` emits `FileHighlighted` when cursor moves (updates preview)
 - `Preview` receives file paths via `show_file()` async method, scrollable when focused
 - App handles all messages in `on_<widget>_<message>` handlers
@@ -110,7 +112,7 @@ cat \$(uv run python -c "from librarian.config import Config; print(Config.load(
 ## Keyboard Navigation
 
 Tab cycles through panels in clockwise order:
-1. Favorites (top-left)
+1. Tools (top-left)
 2. Files (top-right)
 3. Preview (bottom-right)
 4. All Tags (bottom-left)
@@ -119,12 +121,13 @@ Custom focus order is defined in `LibrarianApp.FOCUS_ORDER` with overridden `act
 
 Key bindings:
 - `s` - Search files and tags
-- `e` - Edit selected file (only way to open editor)
+- `e` - Edit selected file (uses taskpaper TUI for `.taskpaper` files if configured)
 - `r` - Rename file
+- `d` - Delete selected file (press twice to confirm)
 - `m` - Move file to different directory (Tab for completion)
-- `b` - Toggle browse mode (directory tree vs all tags)
+- `t` - Select TaskPaper tool (auto-selects #taskpaper tag)
 - `u` - Update/rescan files
-- `n` - Create new markdown file with current tag
+- `n` - Create new file (`.taskpaper` when TaskPaper tool active, `.md` otherwise)
 - `x` - Export current file to HTML
 - `Escape` - Navigate back from wiki link or exit search
 - `?` - Show help
@@ -135,7 +138,8 @@ Key bindings:
 - Widgets inherit from `Vertical` container (not `Static`)
 - ListViews use `height: 1fr` to fill available space within their sections
 - Headers use fixed `height: 1`
-- TagList splits into two `.tag-section` containers, each with `height: 1fr`
+- TagList: Tools list at 30% height, content panel at 70% height
+- Content panel sections toggled via CSS `hidden` class
 
 ## Config Structure
 
@@ -149,6 +153,7 @@ class TagConfig:
 class Config:
     scan_directory: Path
     editor: str
+    taskpaper: str          # Path to taskpapertui executable (empty = use editor)
     tags: TagConfig
     export_directory: Path  # Default: ~/Downloads
     data_directory: Path    # Default: ~/.local/share/librarian
@@ -240,22 +245,15 @@ Press `s` to search files by filename or tag. The search performs partial matchi
 
 ## File Creation
 
-Press `n` to create a new markdown file in the scan directory.
+Press `n` to create a new file in the scan directory. The file type depends on the active tool:
 
-### Behavior
-- Opens a text input modal with suggested filename based on current tag
-- Suggested format: `new-note-tagname.md` (or `new-note.md` if no tag selected)
-- Creates file with template content including the current tag
-- Opens the new file in the configured editor automatically
+### Markdown (default)
+- Creates `.md` file with template including current tag
+- Opens in the configured editor
 
-### Template Structure
-```markdown
-# Title
-
-#current-tag
-
-Content here...
-```
+### TaskPaper (when TaskPaper tool is active)
+- Creates `.taskpaper` file with `Inbox:` project template and `#taskpaper` tag
+- Opens in configured taskpaper editor (or falls back to default editor)
 
 ## Export to HTML
 
