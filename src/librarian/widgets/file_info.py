@@ -1,4 +1,4 @@
-"""Modals for file rename and move operations."""
+"""Modals for file rename, move, and association operations."""
 
 import os
 import shutil
@@ -9,7 +9,7 @@ from textual.binding import Binding
 from textual.containers import Vertical, Horizontal
 from textual.message import Message
 from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Label, Static
+from textual.widgets import Button, Input, Label, ListItem, ListView, Static
 
 
 class RenameModal(ModalScreen):
@@ -490,6 +490,135 @@ class MoveModal(ModalScreen):
             self.dismiss(("moved", self.file_path, new_path))
         except OSError as e:
             self.app.notify(f"Move failed: {e}", severity="error")
+
+
+class _AssociateFileItem(ListItem):
+    """A list item for a file in the associate modal."""
+
+    def __init__(self, file_path: Path) -> None:
+        super().__init__()
+        self.file_path = file_path
+
+    def compose(self) -> ComposeResult:
+        yield Label(self.file_path.name)
+
+
+class AssociateModal(ModalScreen):
+    """Modal screen for associating a meeting with a file."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel", show=False),
+    ]
+
+    CSS = """
+    AssociateModal {
+        align: center middle;
+    }
+
+    #associate-container {
+        width: 60;
+        height: auto;
+        max-height: 80%;
+        background: $surface;
+        border: solid $primary;
+        padding: 1 2;
+    }
+
+    #associate-title {
+        text-align: center;
+        text-style: bold;
+        margin-bottom: 1;
+    }
+
+    #meeting-name {
+        color: $text;
+        padding: 0 1;
+        background: $surface-darken-1;
+        margin-bottom: 1;
+    }
+
+    #associate-file-list {
+        height: auto;
+        max-height: 15;
+    }
+
+    #associate-file-list ListItem {
+        padding: 0 1;
+    }
+
+    #associate-file-list ListItem:hover {
+        background: $boost;
+    }
+
+    #associate-file-list ListItem.--highlight {
+        background: $accent;
+    }
+
+    #associate-hint {
+        color: $text-muted;
+        text-style: italic;
+        margin-top: 1;
+    }
+
+    #associate-button-row {
+        margin-top: 1;
+        height: 3;
+        align: center middle;
+    }
+
+    #associate-button-row Button {
+        margin: 0 1;
+        min-width: 12;
+    }
+    """
+
+    def __init__(self, event_title: str, file_paths: list[Path]) -> None:
+        super().__init__()
+        self.event_title = event_title
+        self.file_paths = file_paths
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="associate-container"):
+            yield Static("ASSOCIATE MEETING", id="associate-title")
+            yield Static(self.event_title, id="meeting-name")
+            yield Label("Select a file:", classes="info-label")
+            yield ListView(
+                *[_AssociateFileItem(fp) for fp in self.file_paths],
+                id="associate-file-list",
+            )
+            yield Static("Enter to confirm, Escape to cancel", id="associate-hint")
+            with Horizontal(id="associate-button-row"):
+                yield Button("Associate", id="associate-btn", variant="primary")
+                yield Button("Cancel", id="cancel-btn")
+
+    def on_mount(self) -> None:
+        """Focus the file list on mount."""
+        list_view = self.query_one("#associate-file-list", ListView)
+        list_view.focus()
+        if self.file_paths:
+            list_view.index = 0
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "cancel-btn":
+            self.dismiss(None)
+        elif event.button.id == "associate-btn":
+            self._do_associate()
+
+    def on_list_view_selected(self, event: ListView.Selected) -> None:
+        """Handle Enter/click on a file item."""
+        self._do_associate()
+
+    def _do_associate(self) -> None:
+        list_view = self.query_one("#associate-file-list", ListView)
+        if list_view.highlighted_child is not None:
+            item = list_view.highlighted_child
+            if isinstance(item, _AssociateFileItem):
+                self.dismiss(item.file_path)
+                return
+        self.app.notify("No file selected", severity="warning")
 
 
 # Keep FileInfoModal as an alias for backwards compatibility during transition

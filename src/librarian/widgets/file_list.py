@@ -157,6 +157,7 @@ class FileList(Vertical):
         """Handle file selection (click or Enter on already-highlighted item)."""
         if event.item is not None and isinstance(event.item, FileItem):
             self.post_message(self.FileHighlighted(event.item.file_path))
+            self.post_message(self.FileSelected(event.item.file_path))
 
     def get_selected_file(self) -> Path | None:
         """Get the currently highlighted file path."""

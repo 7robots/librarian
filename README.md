@@ -35,7 +35,10 @@ A terminal-based tag browser for markdown and taskpaper files. Librarian scans y
 - **File Management**: Rename, move, and delete files with keyboard shortcuts
 - **Wiki Links**: Navigate between notes using `[[note.md]]` syntax
 - **Export**: Export files to HTML with one keypress
+- **Calendar Integration**: View today's meetings from macOS Calendar (via icalPal), associate meetings with notes, and create meeting note templates
 - **File Creation**: Create new notes (`.md` or `.taskpaper` depending on active tool)
+- **Custom Banner**: Colorful ASCII art header with per-letter styling
+- **Visual Focus Indicators**: Distinct border colors per panel with focus-within highlighting
 - **Dynamic Layout**: Resize terminal window and UI adapts
 
 ## Installation
@@ -75,6 +78,7 @@ On first run, Librarian will:
 | `r` | Rename selected file |
 | `m` | Move selected file to different directory |
 | `t` | Select TaskPaper tool (auto-selects #taskpaper tag) |
+| `a` | Associate meeting with file (Calendar tool only) |
 | `x` | Export selected file to HTML |
 | `u` | Update/rescan all files |
 | `Tab` | Cycle focus between panels (clockwise) |
@@ -113,6 +117,30 @@ whitelist = ["project", "todo", "notes"]  # Used when mode = "whitelist"
 ### TaskPaper Integration
 
 When `taskpaper` is set in the config, pressing `e` on a `.taskpaper` file will launch the specified TaskPaper TUI instead of the default editor. This allows a seamless workflow: select TaskPaper from the Tools menu (or press `t`), browse your `.taskpaper` files, and edit them in a dedicated TaskPaper editor.
+
+### Calendar Integration
+
+Librarian integrates with macOS Calendar via [icalPal](https://github.com/ajrosen/icalPal) to show today's meetings in the TUI.
+
+**Prerequisites:**
+```bash
+brew tap ajrosen/tap && brew install icalPal
+```
+
+**Configuration:**
+```toml
+[calendar]
+enabled = true
+calendar_name = ""     # empty = all calendars
+icalpal_path = ""      # empty = auto-detect
+```
+
+**Workflow:**
+1. Select **Calendar** from the Tools menu to see today's meetings
+2. Navigate meetings to preview associated notes or meeting details
+3. Press `a` to associate a meeting with an existing `#meetings`-tagged file (opens the AssociateModal)
+4. Press `n` to create a new meeting note template (auto-associated, includes `#meetings` tag)
+5. Press `e` to edit the associated note
 
 ## Supported File Types
 

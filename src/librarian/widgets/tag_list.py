@@ -8,6 +8,8 @@ from textual.containers import Vertical
 from textual.message import Message
 from textual.widgets import DirectoryTree, Label, ListItem, ListView, Static
 
+from .calendar_list import CalendarList
+
 
 class MarkdownDirectoryTree(DirectoryTree):
     """A DirectoryTree that only shows directories and markdown files."""
@@ -152,6 +154,11 @@ class TagList(Vertical):
             super().__init__()
             self.tool_name = tool_name
 
+    class CalendarRefreshRequested(Message):
+        """Message emitted when the calendar panel is shown and needs data."""
+
+        pass
+
     def __init__(self, scan_directory: Path | None = None, **kwargs) -> None:
         super().__init__(**kwargs)
         self._all_tags: list[tuple[str, int]] = []
@@ -175,6 +182,8 @@ class TagList(Vertical):
             with Vertical(id="folders-section", classes="content-section hidden"):
                 yield Static("FOLDERS", classes="tag-header", id="folders-header")
                 yield MarkdownDirectoryTree(str(self._scan_directory), id="directory-tree")
+            with Vertical(id="calendar-section", classes="content-section hidden"):
+                yield CalendarList(id="calendar-list")
             yield Static(
                 "Coming soon...",
                 id="placeholder-section",
@@ -247,14 +256,19 @@ class TagList(Vertical):
                 all_list.index = i
                 return
 
+    @property
+    def calendar_list(self) -> CalendarList:
+        return self.query_one("#calendar-list", CalendarList)
+
     def _switch_panel(self, panel_name: str) -> None:
         """Hide all content sections, then show the requested one."""
         self.active_tool = panel_name
         tags_section = self.query_one("#tags-section")
         folders_section = self.query_one("#folders-section")
+        calendar_section = self.query_one("#calendar-section")
         placeholder = self.query_one("#placeholder-section")
 
-        for section in (tags_section, folders_section, placeholder):
+        for section in (tags_section, folders_section, calendar_section, placeholder):
             section.add_class("hidden")
 
         if panel_name == "tags":
@@ -263,9 +277,13 @@ class TagList(Vertical):
         elif panel_name == "folders":
             folders_section.remove_class("hidden")
             self.directory_tree.focus()
-        elif panel_name in ("calendar", "agents"):
+        elif panel_name == "calendar":
+            calendar_section.remove_class("hidden")
+            self.calendar_list.list_view.focus()
+            self.post_message(self.CalendarRefreshRequested())
+        elif panel_name == "agents":
             placeholder.remove_class("hidden")
-            placeholder.update(f"{panel_name.title()} \u2014 coming soon...")
+            placeholder.update("Agents \u2014 coming soon...")
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         """Handle selection from tools menu or tag list."""
@@ -278,8 +296,10 @@ class TagList(Vertical):
                 self._switch_panel("tags")
             elif tool == "folders":
                 self._switch_panel("folders")
-            elif tool in ("calendar", "agents"):
-                self._switch_panel(tool)
+            elif tool == "calendar":
+                self._switch_panel("calendar")
+            elif tool == "agents":
+                self._switch_panel("agents")
             elif tool == "taskpaper":
                 self.active_tool = "taskpaper"
                 self.post_message(self.ToolLaunched("taskpaper"))

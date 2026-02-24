@@ -8,9 +8,11 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.timer import Timer
-from textual.widgets import Footer, Header, Static
+from textual.widgets import Footer, Static
 from textual.worker import Worker, get_current_worker
 
+from .calendar import CalendarEvent, clear_cache, fetch_todays_events, find_icalpal
+from .calendar_store import get_association, init_store, set_association
 from .config import Config
 from .database import (
     get_all_tags,
@@ -23,7 +25,7 @@ from .export import export_markdown
 from .navigation import NavigationStack, NavigationState
 from .scanner import rescan_file, scan_directory
 from .watcher import FileWatcher
-from .widgets import RenameModal, MoveModal, FileList, Preview, TagList, load_file_content
+from .widgets import Banner, CalendarList, RenameModal, MoveModal, AssociateModal, FileList, Preview, TagList, load_file_content
 from .widgets.tag_list import TagItem
 
 
@@ -36,13 +38,17 @@ class LibrarianApp(App):
     CSS = """
     #main-container {
         width: 100%;
-        height: 100%;
+        height: 1fr;
     }
 
     #tag-list {
         width: 25%;
         height: 100%;
-        border: solid $primary;
+        border: solid $accent;
+    }
+
+    #tag-list:focus-within {
+        border: solid cyan;
     }
 
     #right-panel {
@@ -52,12 +58,20 @@ class LibrarianApp(App):
 
     #file-list {
         height: 33%;
-        border: solid $primary;
+        border: solid $warning;
+    }
+
+    #file-list:focus-within {
+        border: solid yellow;
     }
 
     #preview {
         height: 67%;
-        border: solid $primary;
+        border: solid $success;
+    }
+
+    #preview:focus-within {
+        border: solid green;
     }
     """
 
@@ -73,6 +87,7 @@ class LibrarianApp(App):
         Binding("d", "delete_file", "Delete"),
         Binding("m", "move_file", "Move"),
         Binding("t", "launch_taskpaper", "TaskPaper", show=False),
+        Binding("a", "associate_meeting", "Associate", show=False),
         Binding("x", "export", "Export"),
         Binding("?", "help", "Help"),
         Binding("escape", "go_back", "Back", show=False),
@@ -95,7 +110,7 @@ class LibrarianApp(App):
         self._pending_preview_path: Path | None = None  # Track which file is being loaded
 
     def compose(self) -> ComposeResult:
-        yield Header()
+        yield Banner()
         with Horizontal(id="main-container"):
             yield TagList(
                 scan_directory=self.config.scan_directory,
@@ -111,6 +126,7 @@ class LibrarianApp(App):
         """Initialize the app after mounting."""
         # Load existing index immediately for fast startup
         init_database(self.config.get_index_path())
+        init_store(self.config.data_directory)
         self._refresh_tags()
 
         # Focus the tools list initially
@@ -165,6 +181,12 @@ class LibrarianApp(App):
             if result:
                 output_path, fmt = result
                 self.notify(f"Exported to {output_path.name} ({fmt.upper()})", timeout=5)
+
+        elif worker_name == "_fetch_calendar":
+            result = event.worker.result
+            if result is not None:
+                tag_list = self.query_one("#tag-list", TagList)
+                tag_list.calendar_list.update_events(result)
 
         elif worker_name == "_load_preview":
             # Preview content loaded in background thread
@@ -293,6 +315,11 @@ class LibrarianApp(App):
         if widget_id == "tools-list-view":
             return tag_list.tools_list_view
         elif widget_id == "all-tags-list-view":
+            # Focus the appropriate content panel based on active tool
+            if tag_list.active_tool == "folders":
+                return tag_list.directory_tree
+            elif tag_list.active_tool == "calendar":
+                return tag_list.calendar_list.list_view
             return tag_list.all_tags_list_view
         elif widget_id == "file-list-view":
             return self.query_one("#file-list", FileList).list_view
@@ -316,6 +343,7 @@ class LibrarianApp(App):
             id(preview.scroll_view): 2,
             id(tag_list.all_tags_list_view): 3,
             id(tag_list.directory_tree): 3,  # Same position as all-tags
+            id(tag_list.calendar_list.list_view): 3,  # Same position as all-tags
         }
         return focus_map.get(id(focused), -1)
 
@@ -357,6 +385,41 @@ class LibrarianApp(App):
             filename = f"new-note-{timestamp}.taskpaper"
             file_path = self.config.scan_directory / filename
             content = "Inbox:\n\t- \n\n#taskpaper\n"
+        elif tag_list.active_tool == "calendar":
+            # Create meeting note from selected event
+            event = tag_list.calendar_list.get_selected_event()
+            if event:
+                safe_title = "".join(
+                    c if c.isalnum() or c in " -_" else "" for c in event.title
+                ).strip().replace(" ", "-")
+                date_str = datetime.now().strftime("%Y-%m-%d")
+                filename = f"{date_str}-{safe_title}.md"
+                file_path = self.config.scan_directory / filename
+
+                lines = [f"# {event.title}", ""]
+                lines.append(f"**Date:** {date_str}")
+                lines.append(f"**Time:** {event.time_range_str}")
+                if event.location:
+                    lines.append(f"**Location:** {event.location}")
+                if event.attendees:
+                    lines.extend(["", "## Attendees", ""])
+                    for attendee in event.attendees:
+                        lines.append(f"- {attendee}")
+                lines.extend(["", "## Notes", "", "", "", "#meetings"])
+                content = "\n".join(lines)
+
+                file_path.write_text(content, encoding="utf-8")
+                await self._edit_file(file_path)
+
+                # Auto-associate the new note with the event
+                set_association(event.uid, file_path)
+
+                self.run_worker(self._background_full_rescan, exclusive=True, thread=True)
+                return
+            else:
+                filename = f"meeting-{timestamp}.md"
+                file_path = self.config.scan_directory / filename
+                content = "# Meeting\n\n## Notes\n\n\n\n#meetings\n"
         else:
             filename = f"new-note-{timestamp}.md"
             file_path = self.config.scan_directory / filename
@@ -556,8 +619,124 @@ class LibrarianApp(App):
         """Handle tool launches from the Tools menu."""
         if event.tool_name == "taskpaper":
             self._select_taskpaper_tag()
-        elif event.tool_name in ("calendar", "agents"):
-            self.notify(f"{event.tool_name.title()} \u2014 coming soon")
+        elif event.tool_name == "agents":
+            self.notify("Agents \u2014 coming soon")
+
+    def on_tag_list_calendar_refresh_requested(
+        self, event: TagList.CalendarRefreshRequested
+    ) -> None:
+        """Handle calendar panel activation — fetch events in background."""
+        self._fetch_calendar_events()
+
+    def _fetch_calendar_events(self) -> None:
+        """Fetch calendar events in a background worker."""
+        if not self.config.calendar.enabled:
+            tag_list = self.query_one("#tag-list", TagList)
+            tag_list.calendar_list.show_error("Calendar disabled in config")
+            return
+
+        icalpal_bin = find_icalpal(self.config.calendar.icalpal_path)
+        if not icalpal_bin:
+            tag_list = self.query_one("#tag-list", TagList)
+            tag_list.calendar_list.show_error(
+                "icalPal not found.\nInstall: brew tap ajrosen/tap && brew install icalPal"
+            )
+            return
+
+        self.run_worker(
+            self._background_fetch_events,
+            name="_fetch_calendar",
+            thread=True,
+            group="calendar",
+        )
+
+    def _background_fetch_events(self) -> list[CalendarEvent]:
+        """Fetch calendar events in background thread."""
+        return fetch_todays_events(
+            icalpal_path=self.config.calendar.icalpal_path,
+            calendar_name=self.config.calendar.calendar_name,
+        )
+
+    async def on_calendar_list_meeting_selected(
+        self, event: CalendarList.MeetingSelected
+    ) -> None:
+        """Handle meeting highlight — show associated note in preview."""
+        associated_file = get_association(event.event.uid)
+        if associated_file:
+            # Show associated file in file list and preview
+            file_list = self.query_one("#file-list", FileList)
+            file_list.update_files([associated_file], navigation_target=event.event.title)
+            preview = self.query_one("#preview", Preview)
+            await preview.show_file(associated_file)
+        else:
+            # Show meeting info as preview
+            preview = self.query_one("#preview", Preview)
+            info = self._format_meeting_info(event.event)
+            preview.show_content(None, info, None)
+            preview.query_one("#preview-header", Static).update(
+                f"PREVIEW - {event.event.title}"
+            )
+            # Update file list header
+            file_list = self.query_one("#file-list", FileList)
+            file_list.update_files([], navigation_target=event.event.title)
+
+    def _format_meeting_info(self, event: CalendarEvent) -> str:
+        """Format a CalendarEvent as markdown for preview."""
+        lines = [f"# {event.title}", ""]
+        lines.append(f"**Time:** {event.time_range_str}")
+        if event.calendar_name:
+            lines.append(f"**Calendar:** {event.calendar_name}")
+        if event.location:
+            lines.append(f"**Location:** {event.location}")
+        if event.attendees:
+            lines.append(f"**Attendees:** {', '.join(event.attendees)}")
+        if event.notes:
+            lines.extend(["", "---", "", event.notes])
+        lines.extend(["", "", "*Press `a` to associate a note, or `n` to create one.*"])
+        return "\n".join(lines)
+
+    def action_associate_meeting(self) -> None:
+        """Associate the selected meeting with a file from #meetings tag."""
+        tag_list = self.query_one("#tag-list", TagList)
+        if tag_list.active_tool != "calendar":
+            return
+
+        event = tag_list.calendar_list.get_selected_event()
+        if not event:
+            self.notify("No meeting selected", severity="warning")
+            return
+
+        files = get_files_by_tag("meetings")
+        file_paths = [f[0] for f in files]
+
+        if not file_paths:
+            self.notify("No files with #meetings tag. Press 'n' to create one.", severity="warning")
+            return
+
+        self._associating_event_uid = event.uid
+        self._associating_event_title = event.title
+        self.push_screen(
+            AssociateModal(event.title, file_paths),
+            self._on_associate_dismissed,
+        )
+
+    async def _on_associate_dismissed(self, result) -> None:
+        """Handle associate modal dismissal."""
+        if result is None:
+            return
+
+        file_path = result
+        event_uid = self._associating_event_uid
+        event_title = self._associating_event_title
+
+        set_association(event_uid, file_path)
+        self.notify(f"Associated '{event_title}' with {file_path.name}")
+
+        # Show the associated file in preview
+        file_list = self.query_one("#file-list", FileList)
+        file_list.update_files([file_path], navigation_target=event_title)
+        preview = self.query_one("#preview", Preview)
+        await preview.show_file(file_path)
 
     async def on_tag_list_file_selected(self, event: TagList.FileSelected) -> None:
         """Handle file selection from directory browser."""
@@ -580,7 +759,7 @@ class LibrarianApp(App):
     def action_help(self) -> None:
         """Show help information."""
         self.notify(
-            "s=Search, n=New, e=Edit, d=Delete, x=Export, r=Rename, m=Move, t=TaskPaper, u=Update, q=Quit",
+            "s=Search, n=New, e=Edit, d=Delete, x=Export, r=Rename, m=Move, t=TaskPaper, a=Associate, u=Update, q=Quit",
             timeout=5,
         )
 

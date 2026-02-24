@@ -18,11 +18,15 @@ src/librarian/
 ├── wikilink.py          # Wiki link preprocessing and parsing
 ├── navigation.py        # Navigation state management for wiki links
 ├── export.py            # Export to HTML functionality (with sanitization)
+├── calendar.py          # icalPal wrapper for fetching calendar events
+├── calendar_store.py    # Event-to-file association storage (sidecar JSON)
 └── widgets/
     ├── __init__.py
-    ├── tag_list.py      # Tools sidebar (top) + switchable content panel (Tags/Folders/placeholders)
+    ├── banner.py        # Custom ASCII art banner replacing default Textual Header
+    ├── tag_list.py      # Tools sidebar (top) + switchable content panel (Tags/Folders/Calendar/placeholders)
     ├── file_list.py     # Files with selected tag (ListView + navigation mode)
-    ├── file_info.py     # RenameModal and MoveModal for file operations
+    ├── file_info.py     # RenameModal, MoveModal, and AssociateModal for file operations
+    ├── calendar_list.py # Calendar meeting list widget
     └── preview.py       # Markdown preview pane (VerticalScroll + Markdown)
 ```
 
@@ -35,6 +39,8 @@ src/librarian/
 - **Tools sidebar**: Top-level navigation hub with Tools menu (Tags, Folders, TaskPaper, Calendar, Agents) and switchable content panel
 - **Wiki links**: `[[note.md]]` or `[[note|display text]]` syntax, preprocessed to `wikilink:` scheme
 - **Export**: HTML export with configurable output directory (sanitized output)
+- **Banner**: Custom ASCII art header (`widgets/banner.py`) with per-letter colorization, replacing the default Textual Header
+- **Border styling**: Each panel has a distinct border color (`$accent`/cyan for tags, `$warning`/yellow for files, `$success`/green for preview) with `:focus-within` pseudo-class for active panel indication
 
 ## Index Schema
 
@@ -107,6 +113,8 @@ cat \$(uv run python -c "from librarian.config import Config; print(Config.load(
   - Emits `ToolLaunched` when a tool (e.g. TaskPaper) is selected from Tools menu
 - `FileList` emits `FileHighlighted` when cursor moves (updates preview)
 - `Preview` receives file paths via `show_file()` async method, scrollable when focused
+- `AssociateModal` (in `file_info.py`) presents a list of `#meetings`-tagged files for linking to a calendar event; returns the selected `Path` or `None`
+- `Banner` (in `banner.py`) renders a colorful ASCII art header, replacing the default Textual Header widget
 - App handles all messages in `on_<widget>_<message>` handlers
 
 ## Keyboard Navigation
@@ -126,6 +134,7 @@ Key bindings:
 - `d` - Delete selected file (press twice to confirm)
 - `m` - Move file to different directory (Tab for completion)
 - `t` - Select TaskPaper tool (auto-selects #taskpaper tag)
+- `a` - Associate meeting with file (calendar tool only)
 - `u` - Update/rescan files
 - `n` - Create new file (`.taskpaper` when TaskPaper tool active, `.md` otherwise)
 - `x` - Export current file to HTML
@@ -140,6 +149,11 @@ Key bindings:
 - Headers use fixed `height: 1`
 - TagList: Tools list at 30% height, content panel at 70% height
 - Content panel sections toggled via CSS `hidden` class
+- Banner widget has fixed `height: 5` with `width: 100%`
+- Per-panel border colors with `:focus-within` for active indication:
+  - `#tag-list`: `$accent` / `cyan` when focused
+  - `#file-list`: `$warning` / `yellow` when focused
+  - `#preview`: `$success` / `green` when focused
 
 ## Config Structure
 
@@ -150,6 +164,12 @@ class TagConfig:
     whitelist: list[str] = field(default_factory=list)  # Used for Favorites
 
 @dataclass
+class CalendarConfig:
+    enabled: bool = True
+    calendar_name: str = ""  # empty = all calendars
+    icalpal_path: str = ""   # empty = auto-detect
+
+@dataclass
 class Config:
     scan_directory: Path
     editor: str
@@ -157,6 +177,7 @@ class Config:
     tags: TagConfig
     export_directory: Path  # Default: ~/Downloads
     data_directory: Path    # Default: ~/.local/share/librarian
+    calendar: CalendarConfig
 ```
 
 ## Performance Features
@@ -243,6 +264,40 @@ Press `s` to search files by filename or tag. The search performs partial matchi
 - `file_list.py`: `enter_search_mode()`, `exit_search_mode()`, `update_search_results()` methods
 - Search is performed on the in-memory index, not file contents
 
+## Calendar Integration
+
+Librarian integrates with macOS Calendar via icalPal to show today's meetings.
+
+### Prerequisites
+- icalPal: `brew tap ajrosen/tap && brew install icalPal`
+
+### Configuration
+```toml
+[calendar]
+enabled = true
+calendar_name = ""     # empty = all calendars
+icalpal_path = ""      # empty = auto-detect
+```
+
+### Architecture
+- `calendar.py`: Wraps icalPal subprocess, parses JSON output, 5-minute TTL cache
+- `calendar_store.py`: Sidecar JSON at `{data_directory}/calendar_associations.json` for event-to-file mapping
+- `widgets/calendar_list.py`: `CalendarList` widget with `MeetingItem` list items
+- `widgets/file_info.py`: `AssociateModal` - modal screen listing `#meetings`-tagged files for event-to-file association
+
+### User Experience
+1. Select "Calendar" in Tools → shows today's meetings
+2. Navigate meetings → preview shows associated note or meeting info
+3. Press `a` → pick from `#meetings` tagged files to associate
+4. Press `n` → create meeting note template (auto-associated, includes `#meetings` tag)
+5. Press `e` → edit associated note
+
+### Association Storage
+```json
+{"associations": {"event-uid": {"file": "/path/to/note.md"}}}
+```
+Uses atomic writes (temp file + `os.replace()`).
+
 ## File Creation
 
 Press `n` to create a new file in the scan directory. The file type depends on the active tool:
@@ -254,6 +309,11 @@ Press `n` to create a new file in the scan directory. The file type depends on t
 ### TaskPaper (when TaskPaper tool is active)
 - Creates `.taskpaper` file with `Inbox:` project template and `#taskpaper` tag
 - Opens in configured taskpaper editor (or falls back to default editor)
+
+### Calendar (when Calendar tool is active)
+- Creates `.md` meeting note with title, time, location, attendees from selected event
+- Includes `#meetings` tag
+- Auto-associates with the selected calendar event
 
 ## Export to HTML
 

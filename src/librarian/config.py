@@ -30,6 +30,15 @@ class TagConfig:
 
 
 @dataclass
+class CalendarConfig:
+    """Calendar integration configuration."""
+
+    enabled: bool = True
+    calendar_name: str = ""  # empty = all calendars
+    icalpal_path: str = ""   # empty = auto-detect
+
+
+@dataclass
 class Config:
     """Application configuration."""
 
@@ -39,6 +48,7 @@ class Config:
     tags: TagConfig = field(default_factory=TagConfig)
     export_directory: Path = field(default_factory=lambda: Path.home() / "Downloads")
     data_directory: Path = field(default_factory=get_default_data_dir)
+    calendar: CalendarConfig = field(default_factory=CalendarConfig)
 
     def get_index_path(self) -> Path:
         """Get the JSON index file path based on configured data directory."""
@@ -89,6 +99,14 @@ class Config:
         data_dir = data.get("data_directory", str(get_default_data_dir()))
         data_directory = Path(data_dir).expanduser()
 
+        # Parse calendar config
+        cal_data = data.get("calendar", {})
+        calendar = CalendarConfig(
+            enabled=cal_data.get("enabled", True),
+            calendar_name=cal_data.get("calendar_name", ""),
+            icalpal_path=cal_data.get("icalpal_path", ""),
+        )
+
         config = cls(
             scan_directory=scan_directory,
             editor=editor,
@@ -96,6 +114,7 @@ class Config:
             tags=tags,
             export_directory=export_directory,
             data_directory=data_directory,
+            calendar=calendar,
         )
 
         # Ensure data directory exists
@@ -139,5 +158,14 @@ class Config:
             lines.append(f'whitelist = [{whitelist_str}]  # only used if mode = "whitelist"')
         else:
             lines.append('whitelist = []  # only used if mode = "whitelist"')
+
+        lines.extend([
+            '',
+            '# Calendar integration (requires icalPal)',
+            '[calendar]',
+            f'enabled = {str(self.calendar.enabled).lower()}',
+            f'calendar_name = "{self.calendar.calendar_name}"  # empty = all calendars',
+            f'icalpal_path = "{self.calendar.icalpal_path}"  # empty = auto-detect',
+        ])
 
         config_path.write_text("\n".join(lines) + "\n")
