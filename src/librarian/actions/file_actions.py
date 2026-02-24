@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -95,6 +96,12 @@ class FileActionsMixin:
             editor = self.config.taskpaper
         else:
             editor = self.config.editor
+
+        # Validate editor command exists on PATH or as absolute path
+        editor_path = Path(editor)
+        if not (editor_path.is_absolute() and editor_path.exists()) and not shutil.which(editor):
+            self.notify(f"Editor '{editor}' not found on PATH", severity="error")
+            return
 
         with self.suspend():
             try:

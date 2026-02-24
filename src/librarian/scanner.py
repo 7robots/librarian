@@ -1,7 +1,10 @@
 """File scanning and tag extraction for markdown files."""
 
+import logging
 import re
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from .config import Config
 from .database import (
@@ -82,7 +85,9 @@ def scan_directory(config: Config, full_rescan: bool = False) -> tuple[int, int,
     init_database(config.get_index_path())
 
     scan_dir = config.scan_directory
+    logger.info("Scanning directory: %s (full_rescan=%s)", scan_dir, full_rescan)
     scannable_files = find_scannable_files(scan_dir)
+    logger.debug("Found %d scannable files", len(scannable_files))
 
     # Track current file paths
     current_paths = {str(p) for p in scannable_files}
@@ -127,6 +132,7 @@ def scan_directory(config: Config, full_rescan: bool = False) -> tuple[int, int,
     # Clean up orphaned tags
     cleanup_orphaned_tags()
 
+    logger.info("Scan complete: %d added, %d updated, %d removed", added, updated, removed)
     return added, updated, removed
 
 

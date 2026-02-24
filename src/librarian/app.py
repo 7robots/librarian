@@ -10,6 +10,7 @@ from textual.widgets import Footer, Static
 from textual.worker import Worker
 
 from .actions import CalendarActionsMixin, FileActionsMixin, NavigationActionsMixin
+from .calendar import clear_cache as clear_calendar_cache
 from .calendar_store import init_store
 from .config import Config
 from .database import (
@@ -201,6 +202,13 @@ class LibrarianApp(
                 self.call_later(
                     lambda: preview.show_content(file_path, content, error)
                 )
+
+    def on_app_focus(self) -> None:
+        """Handle app regaining focus — invalidate calendar cache."""
+        clear_calendar_cache()
+        tag_list = self.query_one("#tag-list", TagList)
+        if tag_list.active_tool == "calendar":
+            self._fetch_calendar_events()
 
     async def on_unmount(self) -> None:
         """Clean up when app closes."""

@@ -17,6 +17,7 @@ def tmp_index(tmp_path):
     # Reset module-level state
     database._index = {}
     database._index_path = None
+    database._index_loaded = False
     database._batch_mode = False
     database._batch_dirty = False
 

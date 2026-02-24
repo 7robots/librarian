@@ -1,12 +1,15 @@
 """icalPal wrapper for fetching calendar events."""
 
 import json
+import logging
 import shutil
 import subprocess
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -165,7 +168,8 @@ def fetch_todays_events(
         if not isinstance(raw_events, list):
             return []
 
-    except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError):
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError) as e:
+        logger.warning("Failed to fetch calendar events: %s", e)
         return []
 
     events = []
@@ -180,6 +184,7 @@ def fetch_todays_events(
     # Update cache (before filtering)
     _cache_result = events
     _cache_time = time.time()
+    logger.info("Fetched %d calendar events", len(events))
 
     # Filter by calendar name if specified
     if calendar_name:

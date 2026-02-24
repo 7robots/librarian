@@ -70,7 +70,9 @@ class NavigationActionsMixin:
         self, event: Preview.WikiLinkClicked
     ) -> None:
         """Handle wiki link clicks in the preview."""
-        resolved = resolve_wiki_link(event.target, event.current_file)
+        resolved = resolve_wiki_link(
+            event.target, event.current_file, self.config.scan_directory
+        )
 
         if resolved is None:
             self.notify(f"Link target not found: {event.target}", severity="warning")

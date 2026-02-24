@@ -6,6 +6,12 @@ from .file_list import FileList
 from .preview import Preview, load_file_content
 from .file_info import RenameModal, MoveModal, AssociateModal, FileInfoModal
 from .calendar_list import CalendarList
+from .protocols import (
+    HasTagSelected,
+    HasFileHighlighted,
+    HasMeetingSelected,
+    HasWikiLinkClicked,
+)
 
 __all__ = [
     "Banner",
@@ -18,4 +24,8 @@ __all__ = [
     "AssociateModal",
     "FileInfoModal",
     "CalendarList",
+    "HasTagSelected",
+    "HasFileHighlighted",
+    "HasMeetingSelected",
+    "HasWikiLinkClicked",
 ]

@@ -1,12 +1,15 @@
 """JSON-based index operations for indexing files and tags."""
 
 import json
+import logging
 import os
 import threading
 from collections import defaultdict
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator, TypedDict
+
+logger = logging.getLogger(__name__)
 
 class FileEntry(TypedDict):
     """Type for a file entry in the index."""
@@ -20,6 +23,9 @@ _index: dict[str, FileEntry] = {}
 
 # Configured index file path
 _index_path: Path | None = None
+
+# Lazy loading: True until the index has been loaded from disk
+_index_loaded: bool = False
 
 # Batch mode: when True, defer saves until batch ends
 _batch_mode: bool = False
@@ -36,14 +42,25 @@ def _get_index_path() -> Path:
     return _index_path
 
 
-def _load_index() -> dict[str, FileEntry]:
+def _ensure_loaded() -> None:
+    """Lazily load index from disk on first access."""
+    global _index, _index_loaded
+    if _index_loaded:
+        return
+    _index = _load_index_from_disk()
+    _index_loaded = True
+    logger.debug("Lazy-loaded index: %d files", len(_index))
+
+
+def _load_index_from_disk() -> dict[str, FileEntry]:
     """Load index from JSON file."""
     index_path = _get_index_path()
     if not index_path.exists():
         return {}
 
     try:
-        data = json.loads(index_path.read_text())
+        with open(index_path, "r") as f:
+            data = json.load(f)
         return data.get("files", {})
     except (json.JSONDecodeError, KeyError):
         return {}
@@ -93,24 +110,28 @@ def batch_writes() -> Generator[None, None, None]:
 
 
 def init_database(index_path: Path) -> None:
-    """Initialize the index by loading from JSON file.
+    """Initialize the index by setting the path. Loading is deferred until first access.
 
     Args:
         index_path: Path to the index.json file.
     """
-    global _index, _index_path
+    global _index, _index_path, _index_loaded
     _index_path = index_path
-    _index = _load_index()
+    _index_loaded = False
+    _index = {}
+    logger.info("Database initialized (lazy): %s", index_path)
 
 
 def add_file(path: Path, mtime: float, tags: list[str]) -> None:
     """Add or update a file with its tags."""
+    _ensure_loaded()
     _index[str(path)] = {"mtime": mtime, "tags": tags}
     _save_index()
 
 
 def remove_file(path: Path) -> None:
     """Remove a file from the index."""
+    _ensure_loaded()
     path_str = str(path)
     if path_str in _index:
         del _index[path_str]
@@ -119,12 +140,14 @@ def remove_file(path: Path) -> None:
 
 def get_file_mtime(path: Path) -> float | None:
     """Get the stored mtime for a file, or None if not indexed."""
+    _ensure_loaded()
     entry = _index.get(str(path))
     return entry["mtime"] if entry else None
 
 
 def get_all_tags() -> list[tuple[str, int]]:
     """Get all tags with their file counts, sorted by count descending."""
+    _ensure_loaded()
     tag_counts: dict[str, int] = defaultdict(int)
 
     for entry in _index.values():
@@ -138,6 +161,7 @@ def get_all_tags() -> list[tuple[str, int]]:
 
 def get_files_by_tag(tag_name: str) -> list[tuple[Path, float]]:
     """Get all files with a specific tag."""
+    _ensure_loaded()
     result = []
     for path_str, entry in _index.items():
         if tag_name in entry["tags"]:
@@ -150,13 +174,15 @@ def get_files_by_tag(tag_name: str) -> list[tuple[Path, float]]:
 
 def get_all_files() -> list[Path]:
     """Get all indexed file paths."""
+    _ensure_loaded()
     return sorted(Path(p) for p in _index.keys())
 
 
 def clear_index() -> None:
     """Clear all indexed data."""
-    global _index
+    global _index, _index_loaded
     _index = {}
+    _index_loaded = True  # Mark as loaded (empty)
     _save_index()
 
 
@@ -174,6 +200,7 @@ def search_files(query: str) -> list[tuple[Path, float, list[str]]]:
     Returns:
         List of (path, mtime, matching_tags) tuples sorted by mtime descending
     """
+    _ensure_loaded()
     if not query.strip():
         return []
 
@@ -200,7 +227,11 @@ def search_files(query: str) -> list[tuple[Path, float, list[str]]]:
     return results
 
 
-def resolve_wiki_link(target: str, current_file: Path | None = None) -> Path | None:
+def resolve_wiki_link(
+    target: str,
+    current_file: Path | None = None,
+    scan_directory: Path | None = None,
+) -> Path | None:
     """Resolve a wiki link target to a file path.
 
     Resolution order:
@@ -208,15 +239,24 @@ def resolve_wiki_link(target: str, current_file: Path | None = None) -> Path | N
     2. Search by filename in index
     3. Try appending .md extension if missing
 
+    If scan_directory is provided, resolved paths are validated to stay
+    within the scan directory to prevent path traversal.
+
     Args:
         target: The wiki link target (e.g., "note.md" or "folder/note")
         current_file: The file containing the wiki link (for relative resolution)
+        scan_directory: Root scan directory for path traversal validation
 
     Returns:
         Resolved Path or None if not found
     """
+    _ensure_loaded()
     # Normalize target - remove leading/trailing whitespace
     target = target.strip()
+
+    # Reject targets with path traversal patterns
+    if ".." in target:
+        return None
 
     # List of targets to try (original and with extensions)
     targets_to_try = [target]
@@ -229,7 +269,9 @@ def resolve_wiki_link(target: str, current_file: Path | None = None) -> Path | N
         if current_file is not None:
             relative_path = current_file.parent / try_target
             if relative_path.exists() and relative_path.is_file():
-                return relative_path.resolve()
+                resolved = relative_path.resolve()
+                if _is_within_scan_dir(resolved, scan_directory):
+                    return resolved
 
         # 2. Search by filename in index
         target_name = Path(try_target).name.lower()
@@ -237,7 +279,8 @@ def resolve_wiki_link(target: str, current_file: Path | None = None) -> Path | N
             indexed_path = Path(path_str)
             if indexed_path.name.lower() == target_name:
                 if indexed_path.exists():
-                    return indexed_path
+                    if _is_within_scan_dir(indexed_path, scan_directory):
+                        return indexed_path
 
         # 3. Search by path suffix (for targets like "folder/note.md")
         if "/" in try_target:
@@ -246,6 +289,18 @@ def resolve_wiki_link(target: str, current_file: Path | None = None) -> Path | N
                 if path_str.lower().endswith(target_suffix):
                     indexed_path = Path(path_str)
                     if indexed_path.exists():
-                        return indexed_path
+                        if _is_within_scan_dir(indexed_path, scan_directory):
+                            return indexed_path
 
     return None
+
+
+def _is_within_scan_dir(path: Path, scan_directory: Path | None) -> bool:
+    """Check if a path is within the scan directory."""
+    if scan_directory is None:
+        return True
+    try:
+        path.resolve().relative_to(scan_directory.resolve())
+        return True
+    except ValueError:
+        return False

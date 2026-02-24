@@ -154,6 +154,7 @@ def markdown_to_html(content: str, title: str = "Document") -> str:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data: https:;">
     <title>{safe_title}</title>
     <style>
 {EXPORT_CSS}

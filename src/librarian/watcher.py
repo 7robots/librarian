@@ -1,9 +1,12 @@
 """File system watcher for auto-refresh of markdown index."""
 
+import logging
 import threading
 import time
 from pathlib import Path
 from typing import Callable
+
+logger = logging.getLogger(__name__)
 
 from watchdog.events import FileSystemEventHandler, FileSystemEvent
 from watchdog.observers import Observer
@@ -37,6 +40,7 @@ class MarkdownEventHandler(FileSystemEventHandler):
 
     def _schedule_update(self, path: str) -> None:
         """Schedule a debounced update for the given path."""
+        logger.debug("File change detected: %s", path)
         with self._lock:
             self._pending_paths[path] = time.time()
 
@@ -62,6 +66,7 @@ class MarkdownEventHandler(FileSystemEventHandler):
         if not paths:
             return
 
+        logger.info("Processing %d file change(s)", len(paths))
         # Process all changed files in a single batch to minimize disk I/O
         with batch_writes():
             for path_str in paths:
@@ -130,6 +135,7 @@ class FileWatcher:
         )
         self._observer.daemon = True
         self._observer.start()
+        logger.info("File watcher started: %s", self.config.scan_directory)
 
     def stop(self) -> None:
         """Stop watching."""
