@@ -8,6 +8,9 @@ from textual.events import Key
 from textual.message import Message
 from textual.widgets import Input, Label, ListItem, ListView, Static
 
+# Maximum files to display before showing "Show more" item
+MAX_DISPLAY_FILES = 500
+
 
 class FileItem(ListItem):
     """A list item representing a file."""
@@ -22,6 +25,25 @@ class FileItem(ListItem):
             yield Label(f"{self.file_path.name}  [{self.match_info}]")
         else:
             yield Label(self.file_path.name)
+
+
+class ShowMoreFilesItem(ListItem):
+    """A list item that triggers loading the full file collection."""
+
+    DEFAULT_CSS = """
+    ShowMoreFilesItem {
+        color: $text-muted;
+        text-style: italic;
+    }
+    """
+
+    def __init__(self, total_count: int, displayed_count: int) -> None:
+        super().__init__()
+        self.total_count = total_count
+        self.remaining = total_count - displayed_count
+
+    def compose(self) -> ComposeResult:
+        yield Label(f"... show {self.remaining} more ({self.total_count} total)")
 
 
 class FileList(Vertical):
@@ -91,10 +113,12 @@ class FileList(Vertical):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self._files: list[Path] = []
+        self._all_files: list[Path] = []  # Full list before truncation
         self._current_tag: str | None = None
         self._navigation_target: str | None = None
         self._search_mode: bool = False
-        self._match_info: dict[Path, str] = {}  # Store match info for display
+        self._match_info: dict[Path, str] = {}
+        self._files_show_all: bool = False
 
     def compose(self) -> ComposeResult:
         yield Static("FILES", id="file-header")
@@ -118,11 +142,12 @@ class FileList(Vertical):
             tag: Current tag filter (used for header display)
             navigation_target: Wiki link target being navigated to (navigation mode)
         """
-        self._files = files
+        self._all_files = files
         self._current_tag = tag
         self._navigation_target = navigation_target
-        self._match_info = {}  # Clear match info when not in search mode
-        self._search_mode = False  # Exit search mode when files are updated
+        self._match_info = {}
+        self._search_mode = False
+        self._files_show_all = False
         list_view = self.list_view
         list_view.clear()
 
@@ -140,13 +165,25 @@ class FileList(Vertical):
         else:
             header.update("FILES")
 
-        for file_path in files:
+        # Apply display cap for large collections
+        if len(files) > MAX_DISPLAY_FILES:
+            display_files = files[:MAX_DISPLAY_FILES]
+        else:
+            display_files = files
+
+        self._files = display_files
+
+        for file_path in display_files:
             list_view.append(FileItem(file_path))
 
+        # Add "show more" item if truncated
+        if len(files) > len(display_files):
+            list_view.append(ShowMoreFilesItem(len(files), len(display_files)))
+
         # Highlight first item if available and emit event
-        if files:
+        if display_files:
             list_view.index = 0
-            self.post_message(self.FileHighlighted(files[0]))
+            self.post_message(self.FileHighlighted(display_files[0]))
 
     def on_list_view_highlighted(self, event: ListView.Highlighted) -> None:
         """Handle file highlight (cursor moved)."""
@@ -155,9 +192,23 @@ class FileList(Vertical):
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         """Handle file selection (click or Enter on already-highlighted item)."""
+        if event.item is not None and isinstance(event.item, ShowMoreFilesItem):
+            self._show_all_files()
+            return
         if event.item is not None and isinstance(event.item, FileItem):
             self.post_message(self.FileHighlighted(event.item.file_path))
             self.post_message(self.FileSelected(event.item.file_path))
+
+    def _show_all_files(self) -> None:
+        """Expand the file list to show all files."""
+        self._files_show_all = True
+        self._files = self._all_files
+        list_view = self.list_view
+        list_view.clear()
+        for file_path in self._all_files:
+            list_view.append(FileItem(file_path))
+        if self._all_files:
+            list_view.index = 0
 
     def get_selected_file(self) -> Path | None:
         """Get the currently highlighted file path."""

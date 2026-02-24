@@ -10,6 +10,9 @@ from textual.widgets import DirectoryTree, Label, ListItem, ListView, Static
 
 from .calendar_list import CalendarList
 
+# Maximum tags to display before showing "Show more" item
+MAX_DISPLAY_TAGS = 200
+
 
 class MarkdownDirectoryTree(DirectoryTree):
     """A DirectoryTree that only shows directories and markdown files."""
@@ -37,6 +40,25 @@ class TagItem(ListItem):
 
     def compose(self) -> ComposeResult:
         yield Label(f"#{self.tag_name} ({self.count})")
+
+
+class ShowMoreItem(ListItem):
+    """A list item that triggers loading the full collection."""
+
+    DEFAULT_CSS = """
+    ShowMoreItem {
+        color: $text-muted;
+        text-style: italic;
+    }
+    """
+
+    def __init__(self, total_count: int, displayed_count: int) -> None:
+        super().__init__()
+        self.total_count = total_count
+        self.remaining = total_count - displayed_count
+
+    def compose(self) -> ComposeResult:
+        yield Label(f"... show {self.remaining} more ({self.total_count} total)")
 
 
 class ToolItem(ListItem):
@@ -164,6 +186,7 @@ class TagList(Vertical):
         self._all_tags: list[tuple[str, int]] = []
         self._scan_directory = scan_directory or Path.home()
         self.active_tool: str = "tags"
+        self._tags_show_all: bool = False
 
     def compose(self) -> ComposeResult:
         yield Static("\u2605 TOOLS", classes="tag-header", id="tools-header")
@@ -217,8 +240,14 @@ class TagList(Vertical):
 
         self._all_tags = tags
 
+        # Apply display cap for large collections unless user expanded
+        if not self._tags_show_all and len(tags) > MAX_DISPLAY_TAGS:
+            display_tags = tags[:MAX_DISPLAY_TAGS]
+        else:
+            display_tags = tags
+
         all_list = self.all_tags_list_view
-        self._update_list_view(all_list, tags)
+        self._update_list_view(all_list, display_tags, total_count=len(tags))
 
         if selected_tag:
             self._restore_selection(selected_tag)
@@ -226,7 +255,7 @@ class TagList(Vertical):
             all_list.index = 0
 
     def _update_list_view(
-        self, list_view: ListView, new_tags: list[tuple[str, int]]
+        self, list_view: ListView, new_tags: list[tuple[str, int]], total_count: int = 0
     ) -> None:
         """Update a ListView incrementally, only changing what's different."""
         new_tags_dict = {name: count for name, count in new_tags}
@@ -239,6 +268,9 @@ class TagList(Vertical):
             list_view.clear()
             for tag_name, count in new_tags:
                 list_view.append(TagItem(tag_name, count))
+            # Add "show more" item if truncated
+            if total_count > len(new_tags):
+                list_view.append(ShowMoreItem(total_count, len(new_tags)))
             return
 
         for tag_name, new_count in new_tags_dict.items():
@@ -303,6 +335,12 @@ class TagList(Vertical):
             elif tool == "taskpaper":
                 self.active_tool = "taskpaper"
                 self.post_message(self.ToolLaunched("taskpaper"))
+            return
+
+        # Handle "Show more" item
+        if isinstance(item, ShowMoreItem):
+            self._tags_show_all = True
+            self.update_tags(self._all_tags)
             return
 
         # Handle tag list selection
