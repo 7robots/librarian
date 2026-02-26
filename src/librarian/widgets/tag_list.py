@@ -92,9 +92,17 @@ class TagList(Vertical):
         color: $warning;
     }
 
+    TagList #tools-panel {
+        height: 1fr;
+        border: solid $accent;
+    }
+
+    TagList #tools-panel:focus-within {
+        border: solid cyan;
+    }
+
     TagList #tools-list-view {
-        height: 40%;
-        border-bottom: solid $primary;
+        height: 1fr;
     }
 
     TagList #tools-list-view ListItem {
@@ -118,7 +126,12 @@ class TagList(Vertical):
     }
 
     TagList #content-panel {
-        height: 60%;
+        height: 1fr;
+        border: solid $primary;
+    }
+
+    TagList #content-panel:focus-within {
+        border: solid $primary-lighten-2;
     }
 
     TagList .content-section {
@@ -189,15 +202,16 @@ class TagList(Vertical):
         self._tags_show_all: bool = False
 
     def compose(self) -> ComposeResult:
-        yield Static("\u2605 TOOLS", classes="tag-header", id="tools-header")
-        yield ListView(
-            ToolItem("Tags"),
-            ToolItem("Folders"),
-            ToolItem("TaskPaper"),
-            ToolItem("Calendar"),
-            ToolItem("Agents"),
-            id="tools-list-view",
-        )
+        with Vertical(id="tools-panel"):
+            yield Static("\u2605 TOOLS", classes="tag-header", id="tools-header")
+            yield ListView(
+                ToolItem("Tags"),
+                ToolItem("Folders"),
+                ToolItem("TaskPaper"),
+                ToolItem("Calendar"),
+                ToolItem("Agents"),
+                id="tools-list-view",
+            )
         with Vertical(id="content-panel"):
             with Vertical(id="tags-section", classes="content-section"):
                 yield Static("ALL TAGS", classes="tag-header", id="all-tags-header")

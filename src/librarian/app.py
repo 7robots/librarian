@@ -45,11 +45,6 @@ class LibrarianApp(
     #tag-list {
         width: 25%;
         height: 100%;
-        border: solid $accent;
-    }
-
-    #tag-list:focus-within {
-        border: solid cyan;
     }
 
     #right-panel {
