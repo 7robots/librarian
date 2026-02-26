@@ -28,14 +28,11 @@ def _build_banner() -> Text:
         ["╩═╝", "╩", "╚═╝", "╩╚═", "╩ ╩", "╩╚═", "╩", "╩ ╩", "╝╚╝"],
     ]
 
-    # ASCII art: robot holding a book (placed left of title)
+    # ASCII art: small robot holding a book (placed left of title)
     art_rows = [
-        "  ┌───┐         ",
-        "  │● ●│         ",
-        "  └─┬─┘  ╔══╗  ",
-        " ╭──┴──╮─╢≡≡║  ",
-        " ╰──┬──╯ ╚══╝  ",
-        "   ┘   └        ",
+        " ┌●●┐ ╔═╗ ",
+        " ├──┤─╢≡║ ",
+        "  ┘└  ╚═╝ ",
     ]
 
     robot_color = "bright_cyan"
@@ -52,7 +49,7 @@ def _build_banner() -> Text:
                 txt.append(ch, style=f"bold {book_color}")
             elif ch == "≡":
                 txt.append(ch, style=text_color)
-            elif ch in "┌┐└┘│┬╭╮╰╯┴═╧─":
+            elif ch in "┌┐└┘│┬├┤╭╮╰╯┴═╧─":
                 txt.append(ch, style=f"bold {robot_color}")
             else:
                 txt.append(ch, style="default")
@@ -64,7 +61,7 @@ def _build_banner() -> Text:
     title_width = sum(len(p) for p in title_rows[0]) if title_rows else 0
     title_voffset = (max_rows - len(title_rows)) // 2
     art_voffset = (max_rows - len(art_rows)) // 2
-    gap = " " * 30
+    gap = " " * 4
 
     for i in range(max_rows):
         # Title portion (left, vertically centered)
@@ -96,7 +93,7 @@ class Banner(Vertical):
     DEFAULT_CSS = """
     Banner {
         width: 100%;
-        height: 8;
+        height: 5;
         background: $primary-background;
         padding: 0 1;
     }
