@@ -93,7 +93,7 @@ class TagList(Vertical):
     }
 
     TagList #tools-list-view {
-        height: 30%;
+        height: 40%;
         border-bottom: solid $primary;
     }
 
@@ -118,7 +118,7 @@ class TagList(Vertical):
     }
 
     TagList #content-panel {
-        height: 70%;
+        height: 60%;
     }
 
     TagList .content-section {
