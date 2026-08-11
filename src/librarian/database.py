@@ -27,6 +27,10 @@ _index_path: Path | None = None
 # Lazy loading: True until the index has been loaded from disk
 _index_loaded: bool = False
 
+# Scanner version recorded in the loaded index, so a change in tag-matching
+# rules can force a rescan of files whose mtime has not changed.
+_index_scanner_version: int | None = None
+
 # Batch mode: when True, defer saves until batch ends
 _batch_mode: bool = False
 _batch_dirty: bool = False
@@ -54,16 +58,27 @@ def _ensure_loaded() -> None:
 
 def _load_index_from_disk() -> dict[str, FileEntry]:
     """Load index from JSON file."""
+    global _index_scanner_version
+
     index_path = _get_index_path()
     if not index_path.exists():
+        _index_scanner_version = None
         return {}
 
     try:
         with open(index_path, "r") as f:
             data = json.load(f)
+        _index_scanner_version = data.get("scanner_version")
         return data.get("files", {})
     except (json.JSONDecodeError, KeyError):
+        _index_scanner_version = None
         return {}
+
+
+def get_index_scanner_version() -> int | None:
+    """Scanner version the on-disk index was built with, if recorded."""
+    _ensure_loaded()
+    return _index_scanner_version
 
 
 def _save_index() -> None:
@@ -79,9 +94,23 @@ def _save_index() -> None:
         index_path = _get_index_path()
         index_path.parent.mkdir(parents=True, exist_ok=True)
 
-        temp_path = index_path.with_suffix(".json.tmp")
-        temp_path.write_text(json.dumps({"files": _index}, indent=2))
-        os.replace(temp_path, index_path)
+        _write_index_file(index_path)
+
+
+def _write_index_file(index_path: Path) -> None:
+    """Write the index atomically, stamped with the scanner version."""
+    global _index_scanner_version
+    from .scanner import SCANNER_VERSION
+
+    # Keep the in-memory value in step, so a later check in this same process
+    # does not read a stale version and rescan needlessly.
+    _index_scanner_version = SCANNER_VERSION
+
+    index_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"scanner_version": SCANNER_VERSION, "files": _index}
+    temp_path = index_path.with_suffix(".json.tmp")
+    temp_path.write_text(json.dumps(payload, indent=2))
+    os.replace(temp_path, index_path)
 
 
 @contextmanager
@@ -102,11 +131,7 @@ def batch_writes() -> Generator[None, None, None]:
             _batch_dirty = False
             # Force save now with lock protection
             with _write_lock:
-                index_path = _get_index_path()
-                index_path.parent.mkdir(parents=True, exist_ok=True)
-                temp_path = index_path.with_suffix(".json.tmp")
-                temp_path.write_text(json.dumps({"files": _index}, indent=2))
-                os.replace(temp_path, index_path)
+                _write_index_file(_get_index_path())
 
 
 def init_database(index_path: Path) -> None:
@@ -115,10 +140,11 @@ def init_database(index_path: Path) -> None:
     Args:
         index_path: Path to the index.json file.
     """
-    global _index, _index_path, _index_loaded
+    global _index, _index_path, _index_loaded, _index_scanner_version
     _index_path = index_path
     _index_loaded = False
     _index = {}
+    _index_scanner_version = None
     logger.info("Database initialized (lazy): %s", index_path)
 
 

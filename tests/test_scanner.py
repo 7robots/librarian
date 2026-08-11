@@ -45,15 +45,60 @@ class TestExtractTags:
     def test_no_tags(self):
         assert extract_tags("Just plain text") == []
 
-    def test_tag_in_heading(self):
-        # Markdown headings use # but should not be tags
-        # Actually the regex will match # followed by letter
-        tags = extract_tags("# Heading\n\n#realtag")
-        # "Heading" matches the tag pattern since it starts with a letter
-        assert "realtag" in tags
+    def test_markdown_heading_is_not_a_tag(self):
+        # A heading has a space after the `#`, so it never matches.
+        assert extract_tags("# Heading\n\n#realtag") == ["realtag"]
+
+    def test_heading_without_a_space_is_treated_as_a_tag(self):
+        # `#Heading` is indistinguishable from a tag, and Obsidian agrees.
+        assert extract_tags("#Heading") == ["Heading"]
 
     def test_empty_content(self):
         assert extract_tags("") == []
+
+    def test_link_anchors_are_not_tags(self):
+        """The regression: markdown link anchors were becoming tags."""
+        content = "- [LMA](./LMA.md#lma)\n- [Obs](../platform/Observability.md#observability)\n"
+        assert extract_tags(content) == []
+
+    def test_url_fragments_are_not_tags(self):
+        content = (
+            "See https://docs.google.com/presentation/d/abc/edit#slide=id.p1 and\n"
+            "https://example.com/page#heading=h.xyz\n"
+        )
+        assert extract_tags(content) == []
+
+    def test_tag_must_follow_whitespace_or_start_a_line(self):
+        assert extract_tags("word#nottag") == []
+        assert extract_tags("(#nottag)") == []
+        assert extract_tags("a/b#nottag") == []
+        assert extract_tags("#tag") == ["tag"]
+        assert extract_tags("text #tag") == ["tag"]
+        assert extract_tags("text\n#tag") == ["tag"]
+        assert extract_tags("text\t#tag") == ["tag"]
+
+    def test_tag_at_start_of_content(self):
+        assert extract_tags("#first and more") == ["first"]
+
+    def test_real_tags_survive_alongside_anchors(self):
+        content = "# Notes\n\n#arete\n\n- [LMA](./LMA.md#lma)\n\nmore #meetings\n"
+        assert extract_tags(content) == ["arete", "meetings"]
+
+    def test_fenced_code_is_ignored(self):
+        content = "#real\n\n```c\n#include <stdio.h>\n#define X 1\n```\n"
+        assert extract_tags(content) == ["real"]
+
+    def test_tilde_fenced_code_is_ignored(self):
+        content = "~~~\n#notatag\n~~~\n\n#real\n"
+        assert extract_tags(content) == ["real"]
+
+    def test_inline_code_is_ignored(self):
+        assert extract_tags("use `#notatag` here, but #real counts") == ["real"]
+
+    def test_unbalanced_fence_does_not_swallow_later_tags(self):
+        """A stray fence must not cost the rest of the file its tags."""
+        content = "```\nsome code\n\n#real\n"
+        assert extract_tags(content) == ["real"]
 
     def test_tag_at_end_of_line(self):
         assert extract_tags("content #tag\n") == ["tag"]
@@ -211,3 +256,61 @@ class TestRescanFile:
         path = Path("/nonexistent/file.md")
         result = rescan_file(path, sample_config)
         assert result is False
+
+
+class TestScannerVersionForcesRescan:
+    """A tag-rules change must not wait for mtimes that will never change."""
+
+    @pytest.fixture
+    def config(self, tmp_path, sample_config):
+        """sample_config with its index inside tmp_path."""
+        sample_config.data_directory = tmp_path
+        return sample_config
+
+    def write_old_index(self, config, tags, scanner_version):
+        """An index as an older scanner would have left it."""
+        import json
+
+        note = config.scan_directory / "note1.md"
+        payload = {
+            "files": {str(note): {"mtime": note.stat().st_mtime, "tags": tags}}
+        }
+        if scanner_version is not None:
+            payload["scanner_version"] = scanner_version
+        config.get_index_path().write_text(json.dumps(payload))
+
+    def test_stale_version_triggers_a_rescan(self, config):
+        # Holds a tag the current rules reject, on a file whose mtime is current.
+        self.write_old_index(config, ["python", "nottag"], scanner_version=1)
+        init_database(config.get_index_path())
+
+        scan_directory(config)
+
+        assert "nottag" not in {name for name, _ in get_all_tags()}
+
+    def test_missing_version_triggers_a_rescan(self, config):
+        """Indexes written before the field existed have no version at all."""
+        self.write_old_index(config, ["python", "nottag"], scanner_version=None)
+        init_database(config.get_index_path())
+
+        scan_directory(config)
+
+        assert "nottag" not in {name for name, _ in get_all_tags()}
+
+    def test_current_version_is_recorded_on_write(self, config):
+        import json
+
+        from librarian.scanner import SCANNER_VERSION
+
+        init_database(config.get_index_path())
+        scan_directory(config)
+
+        written = json.loads(config.get_index_path().read_text())
+        assert written["scanner_version"] == SCANNER_VERSION
+
+    def test_matching_version_still_honors_mtime(self, config):
+        """With versions equal, an unchanged file is not re-read."""
+        init_database(config.get_index_path())
+        scan_directory(config)
+
+        assert scan_directory(config) == (0, 0, 0)

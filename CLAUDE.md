@@ -37,7 +37,10 @@ src/librarian/
 
 - **Config location**: `~/.config/librarian/config.toml` (XDG standard)
 - **Index storage**: JSON at configurable `data_directory` (default: `~/.local/share/librarian/`). Atomic writes for iCloud compatibility.
-- **Tag format**: Inline hashtags matching `#[a-zA-Z][a-zA-Z0-9_-]*`
+- **Tag format**: Inline hashtags matching `#[a-zA-Z][a-zA-Z0-9_-]*`, where the `#` must start a line
+  or follow whitespace, and code blocks are skipped. Without the whitespace rule every URL fragment
+  and link anchor becomes a tag — that alone accounted for 53 of 55 tags in a real vault. Matches
+  Obsidian's rules, so the two tag lists agree
 - **Auto-refresh**: watchdog monitors scan directory with debouncing
 - **Folder-first sidebar**: Content panel (Folders/Tags/Calendar) on top, Tools menu below. Opens on Folders — see `DEFAULT_TOOL` in `widgets/tag_list.py`
 - **Optional tools**: every tool needing a third-party program (TaskPaper, Reminders, Calendar) is opt-in via `[tools]`. Hiding a tool withholds its UI entry points only — the code stays live, so `.taskpaper` files keep being indexed, previewed, exported, and edited
@@ -59,6 +62,11 @@ src/librarian/
   }
 }
 ```
+
+The index also carries `scanner_version`. Scanning skips files by mtime, and a change to the tag
+rules does not touch mtimes, so `scanner.SCANNER_VERSION` is bumped when extraction changes meaning
+and a mismatch forces one full rescan. Bump it in the same commit as any change to `TAG_PATTERN` or
+`strip_code()`.
 
 Denormalized structure with tags inline per file. Only files containing at least one hashtag are indexed. Uses atomic writes (temp file + `os.replace()`) for iCloud compatibility.
 

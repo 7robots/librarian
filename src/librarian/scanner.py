@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 from .config import Config
 from .database import (
     add_file,
+    get_index_scanner_version,
     batch_writes,
     get_all_files,
     get_file_mtime,
@@ -17,13 +18,43 @@ from .database import (
     cleanup_orphaned_tags,
 )
 
-# Regex pattern for hashtags: # followed by letter, then letters/numbers/underscores/hyphens
-TAG_PATTERN = re.compile(r"#([a-zA-Z][a-zA-Z0-9_-]*)")
+# Bumped whenever tag extraction changes meaning, so an index built by an older
+# version is rescanned rather than trusted -- scanning skips files by mtime, and
+# a rules change does not touch mtimes.
+#   1: initial
+#   2: `#` must start a line or follow whitespace; code blocks ignored
+SCANNER_VERSION = 2
+
+# A hashtag is `#` followed by a letter, then letters/numbers/underscores/
+# hyphens -- and the `#` must start a line or follow whitespace. That last part
+# matters more than it looks: without it, every URL fragment and link anchor in
+# the vault becomes a tag. `[LMA](./LMA.md#lma)` and a Google Docs link ending
+# `#slide=id.p` were producing #lma and #slide, which is why Librarian once
+# listed 55 tags for a vault Obsidian showed 2 for. Obsidian applies the same
+# rule.
+TAG_PATTERN = re.compile(r"(?<![^\s])#([a-zA-Z][a-zA-Z0-9_-]*)")
+
+# Fenced code blocks, requiring a closing fence so an unbalanced one does not
+# swallow the rest of the file (and with it any real tags below).
+FENCED_CODE_PATTERN = re.compile(r"^(```|~~~).*?^\1", re.MULTILINE | re.DOTALL)
+
+# Inline code spans, which stay on one line.
+INLINE_CODE_PATTERN = re.compile(r"`[^`\n]*`")
+
+
+def strip_code(content: str) -> str:
+    """Blank out code blocks and inline code before looking for tags.
+
+    Obsidian does not read tags inside code, and neither should we: `#include`
+    at the start of a line in a C snippet is not a tag.
+    """
+    without_blocks = FENCED_CODE_PATTERN.sub(" ", content)
+    return INLINE_CODE_PATTERN.sub(" ", without_blocks)
 
 
 def extract_tags(content: str) -> list[str]:
     """Extract unique hashtags from markdown content."""
-    tags = TAG_PATTERN.findall(content)
+    tags = TAG_PATTERN.findall(strip_code(content))
     # Return unique tags, preserving case
     seen = set()
     unique_tags = []
@@ -107,6 +138,16 @@ def scan_directory(config: Config, full_rescan: bool = False) -> tuple[int, int,
         Tuple of (added, updated, removed) file counts
     """
     init_database(config.get_index_path())
+
+    if not full_rescan and get_index_scanner_version() != SCANNER_VERSION:
+        # Tag rules have changed since this index was written; mtimes cannot
+        # tell us that, so re-read everything once.
+        logger.info(
+            "Index built by scanner version %s, now %s: forcing a full rescan",
+            get_index_scanner_version(),
+            SCANNER_VERSION,
+        )
+        full_rescan = True
 
     scan_dir = config.scan_directory
     logger.info("Scanning directory: %s (full_rescan=%s)", scan_dir, full_rescan)
