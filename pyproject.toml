@@ -1,7 +1,7 @@
 [project]
 name = "librarian"
 version = "0.1.0"
-description = "A Textual-based TUI application that indexes markdown files by inline hashtags"
+description = "Terminal Notes & Tasks - a TUI for browsing a folder of markdown notes"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

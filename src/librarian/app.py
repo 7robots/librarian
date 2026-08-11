@@ -39,10 +39,10 @@ class LibrarianApp(
     RemindersActionsMixin,
     App,
 ):
-    """Librarian - Markdown Tag Browser TUI."""
+    """Librarian - Terminal Notes & Tasks."""
 
     TITLE = "Librarian"
-    SUB_TITLE = "Markdown Tag Browser"
+    SUB_TITLE = "Terminal Notes & Tasks"
 
     CSS = """
     #main-container {

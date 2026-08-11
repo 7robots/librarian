@@ -18,7 +18,7 @@ ROBOT_ROWS = (
 ROBOT_WIDTH = max(len(row) for row in ROBOT_ROWS)
 
 TITLE = "LIBRARIAN"
-SUBTITLE = "Markdown Tag Browser"
+SUBTITLE = "Terminal Notes & Tasks"
 URL = "github.com/7robots/librarian"
 
 # One color per letter of the title, cycled from the same palette the folder

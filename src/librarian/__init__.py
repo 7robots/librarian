@@ -1,3 +1,3 @@
-"""Librarian - Markdown Tag Browser TUI."""
+"""Librarian - a terminal notes and tasks browser."""
 
 __version__ = "0.1.0"
