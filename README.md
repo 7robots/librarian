@@ -40,6 +40,7 @@ of an Obsidian vault or any plain folder of markdown.
 ## Installation
 
 Requires Python 3.10+ and [uv](https://github.com/astral-sh/uv).
+Textual 8.2.8 or newer is installed for you from the committed lockfile.
 
 ```bash
 git clone https://github.com/7robots/librarian.git

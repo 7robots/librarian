@@ -37,7 +37,8 @@ ENV/
 Thumbs.db
 
 # uv
-uv.lock
+# uv.lock is tracked: it pins the versions the tests actually ran against,
+# so a fresh clone installs what was tested rather than resolving anew.
 
 # Testing
 .pytest_cache/

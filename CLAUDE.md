@@ -261,7 +261,7 @@ with batch_writes():
 
 ## Dependencies
 
-- `textual>=0.47.0` - TUI framework
+- `textual>=8.2.8` - TUI framework
 - `watchdog>=4.0.0` - File system monitoring
 - `rich` - Markdown rendering (included with textual)
 - `markdown>=3.5.0` - Markdown to HTML conversion for export

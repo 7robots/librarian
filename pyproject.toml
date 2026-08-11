@@ -8,7 +8,7 @@ license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Jefferson Burson" }]
 dependencies = [
-    "textual>=0.47.0",
+    "textual>=8.2.8",
     "watchdog>=4.0.0",
     "markdown>=3.5.0",
 ]
