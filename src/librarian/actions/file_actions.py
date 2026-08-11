@@ -225,6 +225,8 @@ class FileActionsMixin:
             lambda: export_markdown(file_path, self.config.export_directory),
             name="_export_file",
             thread=True,
+            # The ERROR branch notifies; without this the app would exit first.
+            exit_on_error=False,
         )
 
     def _background_full_rescan(self) -> tuple[int, int, int]:

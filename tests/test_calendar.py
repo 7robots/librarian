@@ -9,11 +9,15 @@ from datetime import datetime
 
 import pytest
 
+import json
+
 from librarian.calendar import (
     APPLE_EPOCH_OFFSET,
+    CalendarError,
     CalendarEvent,
     _parse_datetime,
     _parse_event,
+    fetch_todays_events,
     find_icalpal,
 )
 
@@ -162,6 +166,7 @@ class TestFindIcalpal:
     def test_configured_path_used_when_it_exists(self, tmp_path):
         binary = tmp_path / "icalPal"
         binary.write_text("#!/bin/sh\n")
+        binary.chmod(0o755)
         assert find_icalpal(str(binary)) == str(binary)
 
     def test_falls_back_to_path_lookup(self, monkeypatch, tmp_path):
@@ -255,3 +260,147 @@ class TestMeetingPreview:
             assert "Some Meeting" in str(
                 preview.query_one("#preview-header").render()
             )
+
+
+class TestFetchFailures:
+    """A broken icalPal must never look like a day with no meetings."""
+
+    @pytest.fixture(autouse=True)
+    def clear_cache(self):
+        from librarian.calendar import clear_cache
+
+        clear_cache()
+        yield
+        clear_cache()
+
+    def fake_run(self, monkeypatch, **result):
+        """Stub subprocess.run with a given CompletedProcess-ish result."""
+        import subprocess as sp
+
+        defaults = {"returncode": 0, "stdout": "[]", "stderr": ""}
+        defaults.update(result)
+        monkeypatch.setattr(
+            "librarian.calendar.subprocess.run",
+            lambda *a, **kw: sp.CompletedProcess(a[0], **defaults),
+        )
+
+    def working_binary(self, tmp_path, monkeypatch):
+        binary = tmp_path / "icalPal"
+        binary.write_text("#!/bin/sh\n")
+        binary.chmod(0o755)
+        return str(binary)
+
+    def test_empty_day_is_not_an_error(self, tmp_path, monkeypatch):
+        self.fake_run(monkeypatch, stdout="[]")
+        assert (
+            fetch_todays_events(
+                icalpal_path=self.working_binary(tmp_path, monkeypatch), use_cache=False
+            )
+            == []
+        )
+
+    def test_nothing_on_path_raises_with_install_hint(self, monkeypatch):
+        monkeypatch.setattr("librarian.calendar.shutil.which", lambda name: None)
+        with pytest.raises(CalendarError) as exc:
+            fetch_todays_events(use_cache=False)
+        assert "not found" in str(exc.value)
+        assert "brew" in str(exc.value)
+
+    def test_configured_path_missing_is_reported_not_ignored(self, tmp_path):
+        """A typo in icalpal_path must not silently fall back to PATH."""
+        with pytest.raises(CalendarError) as exc:
+            fetch_todays_events(icalpal_path=str(tmp_path / "nope"), use_cache=False)
+        assert "does not exist" in str(exc.value)
+
+    def test_configured_path_not_executable_is_reported(self, tmp_path):
+        binary = tmp_path / "icalPal"
+        binary.write_text("#!/bin/sh\n")
+        binary.chmod(0o644)
+        with pytest.raises(CalendarError) as exc:
+            fetch_todays_events(icalpal_path=str(binary), use_cache=False)
+        assert "not executable" in str(exc.value)
+
+    def test_configured_path_is_a_directory(self, tmp_path):
+        with pytest.raises(CalendarError) as exc:
+            fetch_todays_events(icalpal_path=str(tmp_path), use_cache=False)
+        assert "not a file" in str(exc.value)
+
+    def test_nonzero_exit_reports_stderr(self, tmp_path, monkeypatch):
+        self.fake_run(
+            monkeypatch,
+            returncode=127,
+            stdout="",
+            stderr="bad interpreter: /opt/homebrew/opt/ruby/bin/ruby",
+        )
+        with pytest.raises(CalendarError) as exc:
+            fetch_todays_events(
+                icalpal_path=self.working_binary(tmp_path, monkeypatch), use_cache=False
+            )
+        assert "bad interpreter" in str(exc.value)
+
+    def test_nonzero_exit_without_stderr_reports_code(self, tmp_path, monkeypatch):
+        self.fake_run(monkeypatch, returncode=3, stdout="", stderr="")
+        with pytest.raises(CalendarError) as exc:
+            fetch_todays_events(
+                icalpal_path=self.working_binary(tmp_path, monkeypatch), use_cache=False
+            )
+        assert "exit code 3" in str(exc.value)
+
+    def test_unparseable_output_raises(self, tmp_path, monkeypatch):
+        self.fake_run(monkeypatch, stdout="not json at all")
+        with pytest.raises(CalendarError) as exc:
+            fetch_todays_events(
+                icalpal_path=self.working_binary(tmp_path, monkeypatch), use_cache=False
+            )
+        assert "Could not read" in str(exc.value)
+
+    def test_unexpected_shape_raises(self, tmp_path, monkeypatch):
+        self.fake_run(monkeypatch, stdout='{"not": "a list"}')
+        with pytest.raises(CalendarError):
+            fetch_todays_events(
+                icalpal_path=self.working_binary(tmp_path, monkeypatch), use_cache=False
+            )
+
+    def test_timeout_raises(self, tmp_path, monkeypatch):
+        import subprocess as sp
+
+        def boom(*a, **kw):
+            raise sp.TimeoutExpired(cmd="icalPal", timeout=10)
+
+        monkeypatch.setattr("librarian.calendar.subprocess.run", boom)
+        with pytest.raises(CalendarError) as exc:
+            fetch_todays_events(
+                icalpal_path=self.working_binary(tmp_path, monkeypatch), use_cache=False
+            )
+        assert "timed out" in str(exc.value)
+
+    def test_os_error_raises(self, tmp_path, monkeypatch):
+        def boom(*a, **kw):
+            raise OSError(2, "No such file or directory")
+
+        monkeypatch.setattr("librarian.calendar.subprocess.run", boom)
+        with pytest.raises(CalendarError) as exc:
+            fetch_todays_events(
+                icalpal_path=self.working_binary(tmp_path, monkeypatch), use_cache=False
+            )
+        assert "Could not run icalPal" in str(exc.value)
+
+    def test_failure_does_not_poison_the_cache(self, tmp_path, monkeypatch):
+        binary = self.working_binary(tmp_path, monkeypatch)
+
+        self.fake_run(monkeypatch, stdout=json.dumps([raw_event()]))
+        assert len(fetch_todays_events(icalpal_path=binary, use_cache=False)) == 1
+
+        self.fake_run(monkeypatch, returncode=127, stdout="", stderr="boom")
+        with pytest.raises(CalendarError):
+            fetch_todays_events(icalpal_path=binary, use_cache=False)
+
+        # The last good result is still cached rather than replaced by [].
+        assert len(fetch_todays_events(icalpal_path=binary, use_cache=True)) == 1
+
+    def test_non_executable_file_is_not_found(self, tmp_path, monkeypatch):
+        binary = tmp_path / "icalPal"
+        binary.write_text("#!/bin/sh\n")
+        binary.chmod(0o644)
+        monkeypatch.setattr("librarian.calendar.shutil.which", lambda name: None)
+        assert find_icalpal(str(binary)) is None

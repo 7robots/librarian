@@ -19,16 +19,6 @@ Optional follow-up if the full-screen handoff grates. Requires, in order:
 remtui's `fake_remctl.py` can back the tests, so this is verifiable without touching real
 Reminders data.
 
-### Surface calendar fetch failures
-`calendar.fetch_todays_events()` returns `[]` both when icalPal fails and when the day is genuinely
-empty, so the panel shows "No meetings today" either way. Found while diagnosing a broken icalPal
-(its Homebrew Ruby dependency had gone missing, so it exited 127): Librarian reported an empty day
-rather than a broken tool. `find_icalpal()` also only checks that the file exists, so a binary that
-cannot execute still passes the pre-flight check meant to catch exactly this.
-
-Fix: distinguish failure from empty — carry the exit code and stderr up — and have the pre-flight
-check confirm the binary actually runs.
-
 ## Deferred
 
 ### Expand the Lucide → Nerd Font glyph table

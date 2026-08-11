@@ -172,6 +172,13 @@ class LibrarianApp(
         if event.state.name == "ERROR":
             if worker_name == "_export_file":
                 self.notify(f"Export failed: {event.worker.error}", severity="error")
+            elif worker_name == "_fetch_calendar":
+                # Show why in the panel, so a broken icalPal is never mistaken
+                # for a day with no meetings.
+                message = str(event.worker.error) or "Calendar fetch failed"
+                tag_list = self.query_one("#tag-list", TagList)
+                tag_list.calendar_list.show_error(message)
+                self.notify(message, severity="error", timeout=8)
             return
 
         if event.state.name != "SUCCESS":

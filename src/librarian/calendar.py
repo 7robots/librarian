@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 import shutil
 import subprocess
 import time
@@ -14,6 +15,16 @@ logger = logging.getLogger(__name__)
 # Seconds between the Unix epoch (1970-01-01) and Apple's reference date
 # (2001-01-01), which is what icalPal's integer timestamps count from.
 APPLE_EPOCH_OFFSET = 978_307_200
+
+INSTALL_HINT = "Install: brew tap ajrosen/tap && brew install icalPal"
+
+
+class CalendarError(Exception):
+    """A calendar fetch failed.
+
+    Raised rather than returning an empty list, so a broken icalPal is never
+    reported to the user as a day with no meetings.
+    """
 
 
 @dataclass
@@ -50,6 +61,11 @@ _CACHE_TTL = 300  # 5 minutes
 def find_icalpal(config_path: str = "") -> str | None:
     """Find the icalPal binary.
 
+    Only checks that something executable is there. Whether it *runs* is not
+    knowable cheaply -- `icalPal --version` writes to stderr and exits 1, so it
+    cannot serve as a health check -- so the fetch itself reports what went
+    wrong, via CalendarError.
+
     Args:
         config_path: Optional path from config. Checked first.
 
@@ -58,10 +74,41 @@ def find_icalpal(config_path: str = "") -> str | None:
     """
     if config_path:
         path = Path(config_path).expanduser()
-        if path.exists() and path.is_file():
+        if path.is_file() and os.access(path, os.X_OK):
             return str(path)
 
     return shutil.which("icalPal")
+
+
+def resolve_icalpal(config_path: str = "") -> str:
+    """Resolve the icalPal binary, or raise explaining why it cannot be used.
+
+    A configured path that is not usable is reported rather than quietly
+    replaced by whatever is on PATH -- a typo in `icalpal_path` should say so,
+    not silently run a different binary.
+    """
+    if config_path:
+        path = Path(config_path).expanduser()
+        if not path.exists():
+            raise CalendarError(f"Configured icalpal_path does not exist: {path}")
+        if not path.is_file():
+            raise CalendarError(f"Configured icalpal_path is not a file: {path}")
+        if not os.access(path, os.X_OK):
+            raise CalendarError(f"Configured icalpal_path is not executable: {path}")
+        return str(path)
+
+    binary = shutil.which("icalPal")
+    if not binary:
+        raise CalendarError(f"icalPal not found. {INSTALL_HINT}")
+    return binary
+
+
+def _first_line(text: str) -> str:
+    """First non-empty line of output, for use in a one-line error message."""
+    for line in (text or "").splitlines():
+        if line.strip():
+            return line.strip()
+    return ""
 
 
 def _parse_event(raw: dict) -> CalendarEvent | None:
@@ -167,7 +214,12 @@ def fetch_todays_events(
         use_cache: Whether to use the TTL cache.
 
     Returns:
-        List of CalendarEvent sorted by start time.
+        List of CalendarEvent sorted by start time. An empty list means the day
+        really is empty.
+
+    Raises:
+        CalendarError: icalPal is missing, cannot run, or returned nothing
+            usable. Never conflated with an empty day.
     """
     global _cache_result, _cache_time
 
@@ -179,9 +231,7 @@ def fetch_todays_events(
                 events = [e for e in events if e.calendar_name == calendar_name]
             return events
 
-    binary = find_icalpal(icalpal_path)
-    if not binary:
-        return []
+    binary = resolve_icalpal(icalpal_path)
 
     try:
         result = subprocess.run(
@@ -190,17 +240,27 @@ def fetch_todays_events(
             text=True,
             timeout=10,
         )
+    except subprocess.TimeoutExpired as exc:
+        raise CalendarError("icalPal timed out after 10s") from exc
+    except OSError as exc:
+        raise CalendarError(
+            f"Could not run icalPal: {exc.strerror or exc}"
+        ) from exc
 
-        if result.returncode != 0:
-            return []
+    if result.returncode != 0:
+        detail = _first_line(result.stderr) or f"exit code {result.returncode}"
+        raise CalendarError(f"icalPal failed: {detail}")
 
+    try:
         raw_events = json.loads(result.stdout)
-        if not isinstance(raw_events, list):
-            return []
+    except json.JSONDecodeError as exc:
+        detail = _first_line(result.stderr) or _first_line(result.stdout) or str(exc)
+        raise CalendarError(f"Could not read icalPal output: {detail}") from exc
 
-    except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError) as e:
-        logger.warning("Failed to fetch calendar events: %s", e)
-        return []
+    if not isinstance(raw_events, list):
+        raise CalendarError(
+            f"Unexpected icalPal output: expected a list, got {type(raw_events).__name__}"
+        )
 
     events = []
     for raw in raw_events:

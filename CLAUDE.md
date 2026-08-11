@@ -335,6 +335,20 @@ icalpal_path = ""      # empty = auto-detect
 - `widgets/calendar_list.py`: `CalendarList` widget with `MeetingItem` list items
 - `widgets/file_info.py`: `AssociateModal` - modal screen listing `#meetings`-tagged files for event-to-file association
 
+### Failures vs empty days
+`fetch_todays_events()` raises `CalendarError` rather than returning `[]` when anything goes wrong,
+so a broken icalPal is never displayed as a day with no meetings. The message carries the specific
+cause: exit code with the first line of stderr, a timeout, an OSError's `strerror`, or unreadable
+output. A configured `icalpal_path` that is missing or not executable is reported instead of quietly
+falling back to whatever is on PATH, so a typo says so.
+
+The worker runs with `exit_on_error=False`. Without it, Textual's default takes the **whole app
+down** when the worker raises, before the error branch can display anything. The `_export_file`
+worker needs the same for the same reason.
+
+There is no `--version` pre-flight: `icalPal --version` writes to stderr and exits 1, so it cannot
+tell a working install from a broken one. The fetch itself is the check.
+
 ### Reading icalPal output
 Two field choices in `_parse_event()` are load-bearing and easy to "fix" back into bugs:
 

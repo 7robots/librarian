@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..calendar import CalendarEvent, fetch_todays_events, find_icalpal
+from ..calendar import CalendarEvent, fetch_todays_events
 from ..calendar_store import get_association, set_association
 from ..database import get_files_by_tag
 from ..widgets import AssociateModal, FileList, Preview, TagList
@@ -30,19 +30,14 @@ class CalendarActionsMixin:
             )
             return
 
-        icalpal_bin = find_icalpal(self.config.calendar.icalpal_path)
-        if not icalpal_bin:
-            tag_list = self.query_one("#tag-list", TagList)
-            tag_list.calendar_list.show_error(
-                "icalPal not found.\nInstall: brew tap ajrosen/tap && brew install icalPal"
-            )
-            return
-
         self.run_worker(
             self._background_fetch_events,
             name="_fetch_calendar",
             thread=True,
             group="calendar",
+            # A calendar that cannot be read is reported in the panel; it must
+            # not take the app down, which run_worker does by default.
+            exit_on_error=False,
         )
 
     def _background_fetch_events(self) -> list[CalendarEvent]:
