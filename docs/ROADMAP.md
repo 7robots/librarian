@@ -5,19 +5,27 @@ rather than scattering it across READMEs or issue comments.
 
 ## Planned
 
-### Replace TaskPaper with a remtui re-implementation
-Swap the TaskPaper tool for an Apple Reminders tool, re-implementing
-[remtui](https://github.com/7robots/remtui) (Textual TUI over the `remctl` CLI) inside Librarian
-rather than shelling out to an external editor the way TaskPaper does. Touches the Tools menu,
-the `t` binding, `n` (new-file behavior per active tool), the `taskpaper` config key, and the
-`.taskpaper` handling in the scanner and file list.
-
-Worth splitting into two decisions before writing code: *adding* a Reminders tool, versus
-*removing* TaskPaper support. TaskPaper currently runs through 9 modules, including
+### Decide whether to remove TaskPaper
+A Reminders tool now exists (Tools → Reminders suspends Librarian and runs remtui), so the
+*adding* half of the original TaskPaper→remtui item is done. Whether to *remove* TaskPaper is
+still open, and it is a bigger job than it looks: TaskPaper runs through 9 modules, including
 `taskpaper.py` (taskpaper→markdown for preview and export) and `.taskpaper` handling in the
-scanner, watcher, database, preview, and export. Reminders live in Apple Reminders via `remctl`
-rather than in files, so the new tool cannot reuse the index, file list, or preview the way
-TaskPaper does.
+scanner, watcher, database, preview, and export, plus the `taskpaper` config key and the `t`
+binding. Nothing forces the decision — the two tools coexist fine.
+
+### Embed remtui as a panel instead of suspending
+Optional follow-up if the full-screen handoff grates. Requires, in order:
+
+1. Upgrade Librarian to `textual>=8.2.8` (remtui's floor; Librarian is on 7.x), re-verifying the
+   folder tree, which uses private Textual APIs (`_tree.TOGGLE_STYLE`, `_directory_tree.DirEntry`,
+   `_invalidate()`) that are exactly what majors break.
+2. Refactor remtui's `RemTuiApp` into a `Screen` in its own repo, with the App reduced to a shell
+   that pushes it — Textual cannot nest one App inside another.
+3. Host that screen from Librarian as a modal sized over the two right panels, scoping remtui's
+   app-level theme and `CSS_PATH` so they do not restyle Librarian.
+
+remtui's `fake_remctl.py` can back the tests, so this is verifiable without touching real
+Reminders data.
 
 ### Surface calendar fetch failures
 `calendar.fetch_todays_events()` returns `[]` both when icalPal fails and when the day is genuinely

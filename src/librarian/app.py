@@ -10,7 +10,12 @@ from textual.timer import Timer
 from textual.widgets import Footer, Static
 from textual.worker import Worker
 
-from .actions import CalendarActionsMixin, FileActionsMixin, NavigationActionsMixin
+from .actions import (
+    CalendarActionsMixin,
+    FileActionsMixin,
+    NavigationActionsMixin,
+    RemindersActionsMixin,
+)
 from .appearance import build_folder_appearance
 from .calendar import clear_cache as clear_calendar_cache
 from .calendar_store import init_store
@@ -31,6 +36,7 @@ class LibrarianApp(
     FileActionsMixin,
     CalendarActionsMixin,
     NavigationActionsMixin,
+    RemindersActionsMixin,
     App,
 ):
     """Librarian - Markdown Tag Browser TUI."""
@@ -342,6 +348,8 @@ class LibrarianApp(
         """Handle tool launches from the Tools menu."""
         if event.tool_name == "taskpaper":
             self._select_taskpaper_tag()
+        elif event.tool_name == "reminders":
+            self.action_launch_reminders()
 
     async def on_tag_list_folder_highlighted(
         self, event: TagList.FolderHighlighted

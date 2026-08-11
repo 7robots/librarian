@@ -19,7 +19,10 @@ from .calendar_list import CalendarList
 MAX_DISPLAY_TAGS = 200
 
 # Tools menu entries, in display order.
-TOOLS = ("Tags", "Folders", "TaskPaper", "Calendar")
+TOOLS = ("Tags", "Folders", "TaskPaper", "Reminders", "Calendar")
+
+# Tools that launch an external program instead of switching the content panel.
+LAUNCHER_TOOLS = ("taskpaper", "reminders")
 
 # Tool the sidebar opens on. Folders leads because content is organized by
 # folder; the tag index is a secondary view.
@@ -467,11 +470,12 @@ class TagList(Vertical):
         # Handle tools menu selection
         if isinstance(item, ToolItem):
             tool = item.tool_name.lower()
-            if tool in ("tags", "folders", "calendar"):
+            if tool in LAUNCHER_TOOLS:
+                # These hand off to an external program; the content panel and
+                # active_tool stay as they were.
+                self.post_message(self.ToolLaunched(tool))
+            else:
                 self._switch_panel(tool)
-            elif tool == "taskpaper":
-                self.active_tool = "taskpaper"
-                self.post_message(self.ToolLaunched("taskpaper"))
             return
 
         # Handle "Show more" item

@@ -97,6 +97,7 @@ class Config:
     scan_directory: Path = field(default_factory=lambda: Path.home() / "Documents")
     editor: str = "vim"
     taskpaper: str = ""
+    reminders: str = ""
     tags: TagConfig = field(default_factory=TagConfig)
     export_directory: Path = field(default_factory=lambda: Path.home() / "Downloads")
     data_directory: Path = field(default_factory=get_default_data_dir)
@@ -138,6 +139,9 @@ class Config:
 
         # Parse taskpaper editor path
         taskpaper = data.get("taskpaper", "")
+
+        # Parse reminders TUI path (remtui)
+        reminders = data.get("reminders", "")
 
         # Parse tags config
         tags_data = data.get("tags", {})
@@ -183,6 +187,7 @@ class Config:
             scan_directory=scan_directory,
             editor=editor,
             taskpaper=taskpaper,
+            reminders=reminders,
             tags=tags,
             export_directory=export_directory,
             data_directory=data_directory,
@@ -215,6 +220,9 @@ class Config:
             '# TaskPaper TUI executable for editing .taskpaper files',
             '# e.g. taskpaper = "taskpapertui"',
             f'taskpaper = "{self.taskpaper}"',
+            '',
+            '# Reminders TUI executable (remtui); empty = look for "remtui" on PATH',
+            f'reminders = "{self.reminders}"',
             '',
             '# Directory for exported files (PDF/HTML)',
             f'export_directory = "{self.export_directory}"',

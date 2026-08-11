@@ -39,7 +39,8 @@ src/librarian/
 - **Index storage**: JSON at configurable `data_directory` (default: `~/.local/share/librarian/`). Atomic writes for iCloud compatibility.
 - **Tag format**: Inline hashtags matching `#[a-zA-Z][a-zA-Z0-9_-]*`
 - **Auto-refresh**: watchdog monitors scan directory with debouncing
-- **Folder-first sidebar**: Content panel (Folders/Tags/Calendar) on top, Tools menu (Tags, Folders, TaskPaper, Calendar) below. Opens on Folders — see `DEFAULT_TOOL` in `widgets/tag_list.py`
+- **Folder-first sidebar**: Content panel (Folders/Tags/Calendar) on top, Tools menu (Tags, Folders, TaskPaper, Reminders, Calendar) below. Opens on Folders — see `DEFAULT_TOOL` in `widgets/tag_list.py`
+- **Launcher tools**: TaskPaper and Reminders hand off to an external program rather than switching the content panel — see `LAUNCHER_TOOLS` in `widgets/tag_list.py`
 - **Wiki links**: `[[note.md]]` or `[[note|display text]]` syntax, preprocessed to `wikilink:` scheme
 - **Export**: HTML export with configurable output directory (sanitized output)
 - **Banner**: Custom ASCII art header (`widgets/banner.py`) with per-letter colorization, replacing the default Textual Header
@@ -65,7 +66,7 @@ Denormalized structure with tags inline per file. Only files containing at least
 The app has four panels:
 - **Left sidebar** (25% width): switchable content panel (50% height) on top, Tools menu (50% height) below
   - Content panel switches between: Folders (DirectoryTree), All Tags (ListView), Calendar (CalendarList)
-  - Tools menu: Tags, Folders, TaskPaper, Calendar
+  - Tools menu: Tags, Folders, TaskPaper, Reminders, Calendar
 - **Right top** (33% height): File list — the selected folder's files in folder view, the selected tag's files otherwise
 - **Right bottom** (67% height): Markdown preview
 
@@ -127,7 +128,8 @@ cat \$(uv run python -c "from librarian.config import Config; print(Config.load(
   - Emits `TagSelected` when a tag is selected
   - Emits `FolderHighlighted` when the folder tree cursor moves to a folder
   - Emits `FileSelected` when a file is selected in folder browser
-  - Emits `ToolLaunched` when a tool (e.g. TaskPaper) is selected from Tools menu
+  - Emits `ToolLaunched` for launcher tools (TaskPaper, Reminders), which run an external program
+    instead of switching the content panel — `active_tool` and the visible panel are left alone
   - `_switch_panel()` republishes the active selection so the Files panel follows the tool
   - `initialize_default_tool()` syncs the menu highlight and content panel at startup without taking focus
 - `FileList` emits `FileHighlighted` when cursor moves (updates preview)
@@ -206,6 +208,7 @@ class Config:
     scan_directory: Path
     editor: str
     taskpaper: str          # Path to taskpapertui executable (empty = use editor)
+    reminders: str          # Path to remtui executable (empty = find "remtui" on PATH)
     tags: TagConfig
     export_directory: Path  # Default: ~/Downloads
     data_directory: Path    # Default: ~/.local/share/librarian
@@ -464,6 +467,37 @@ never glyphs — turning names into glyphs is `icons.py`'s job.
   align in a column — needed because one tree can mix one-cell Nerd Font glyphs with two-cell emoji.
 - Files are left unstyled — folders only.
 - Setting `tree.appearance = None` restores the stock Textual tree.
+
+## Reminders (remtui)
+
+Selecting **Reminders** from the Tools menu suspends Librarian and hands the terminal to
+[remtui](https://github.com/7robots/remtui), a Textual TUI for Apple Reminders over the `remctl`
+CLI. Quitting remtui returns to Librarian's panels.
+
+```toml
+reminders = ""   # empty = find "remtui" on PATH
+```
+
+`actions/reminders_actions.py` resolves the executable (absolute path used as-is, otherwise looked up
+on PATH) and runs it inside `with self.suspend():` — the same pattern `action_edit` uses for editors.
+A missing executable notifies rather than launching.
+
+### Why an external program rather than an embedded panel
+Textual has no supported way to run one `App` inside another; the App is the root. Embedding remtui
+would mean refactoring its `RemTuiApp` into a `Screen` that Librarian pushes, which additionally
+requires:
+
+- Upgrading Librarian to `textual>=8.2.8` (remtui's floor; Librarian is on 7.x). The folder tree
+  reaches into private Textual APIs (`_tree.TOGGLE_STYLE`, `_directory_tree.DirEntry`,
+  `_invalidate()`), which is exactly what breaks across a major version.
+- Scoping remtui's app-level theme and `CSS_PATH`, which would otherwise restyle Librarian.
+
+Suspend-and-launch was chosen first because it always runs the real remtui, cannot drift out of sync
+with it, and needs no version coupling. Note that reminders live in Apple Reminders, not in files, so
+nothing in this path touches the index, file list, or preview.
+
+If the embedded version is ever built, remtui ships `fake_remctl.py` — a fake CLI used by its own
+tests — which Librarian could reuse to test the integration without touching real Reminders data.
 
 ## Export to HTML
 
