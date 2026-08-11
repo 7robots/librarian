@@ -12,7 +12,7 @@ from textual.widgets import DirectoryTree, Label, ListItem, ListView, Static, Tr
 from textual.widgets._directory_tree import DirEntry
 from textual.widgets._tree import TOGGLE_STYLE, TreeNode
 
-from ..obsidian import DEFAULT_ICON_STYLE, NotebookNavigatorAppearance
+from ..appearance import FolderAppearance
 from .calendar_list import CalendarList
 
 # Maximum tags to display before showing "Show more" item
@@ -29,27 +29,27 @@ DEFAULT_TOOL = "folders"
 class MarkdownDirectoryTree(DirectoryTree):
     """A DirectoryTree that only shows directories and markdown files.
 
-    When the scan directory sits inside an Obsidian vault using the Notebook
-    Navigator plugin, folder icons and colors are mirrored from that plugin's
-    settings so the panel matches the vault's appearance in Obsidian.
+    Folder icons and colors come from a `FolderAppearance`, which layers
+    Librarian's config over Obsidian's Notebook Navigator settings (when the
+    scan directory is in a vault) over plain defaults.
     """
 
     def __init__(
         self,
         path: str | Path,
-        appearance: NotebookNavigatorAppearance | None = None,
+        appearance: FolderAppearance | None = None,
         **kwargs,
     ) -> None:
         super().__init__(path, **kwargs)
         self._appearance = appearance
 
     @property
-    def appearance(self) -> NotebookNavigatorAppearance | None:
-        """The Notebook Navigator settings being mirrored, if any."""
+    def appearance(self) -> FolderAppearance | None:
+        """The layered folder appearance in use, if any."""
         return self._appearance
 
     @appearance.setter
-    def appearance(self, appearance: NotebookNavigatorAppearance | None) -> None:
+    def appearance(self, appearance: FolderAppearance | None) -> None:
         self._appearance = appearance
         if self.is_mounted:
             self._invalidate()
@@ -86,9 +86,7 @@ class MarkdownDirectoryTree(DirectoryTree):
             return label
 
         path = node.data.path
-        icon = self._appearance.icon_for(path) or self._appearance.default_folder_icon(
-            node.is_expanded
-        )
+        icon = self._appearance.folder_icon(path, node.is_expanded)
         color = self._appearance.color_for(path)
 
         # Drop super()'s toggle glyph and keep the name, which already carries
@@ -276,16 +274,13 @@ class TagList(Vertical):
     def __init__(
         self,
         scan_directory: Path | None = None,
-        icon_style: str = DEFAULT_ICON_STYLE,
+        appearance: FolderAppearance | None = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
         self._all_tags: list[tuple[str, int]] = []
         self._scan_directory = scan_directory or Path.home()
-        self._icon_style = icon_style
-        self._appearance = NotebookNavigatorAppearance.load(
-            self._scan_directory, icon_style
-        )
+        self._appearance = appearance
         self.active_tool: str = DEFAULT_TOOL
         self._tags_show_all: bool = False
 
@@ -334,10 +329,18 @@ class TagList(Vertical):
     def directory_tree(self) -> MarkdownDirectoryTree:
         return self.query_one("#directory-tree", MarkdownDirectoryTree)
 
-    def set_scan_directory(self, path: Path) -> None:
-        """Set the root directory for the directory browser."""
+    def set_scan_directory(
+        self, path: Path, appearance: FolderAppearance | None = None
+    ) -> None:
+        """Set the root directory for the directory browser.
+
+        Appearance depends on the scan directory (config keys are relative to
+        it, and vault detection starts from it), so callers changing the
+        directory should pass a freshly built appearance.
+        """
         self._scan_directory = path
-        self._appearance = NotebookNavigatorAppearance.load(path, self._icon_style)
+        if appearance is not None:
+            self._appearance = appearance
         try:
             tree = self.directory_tree
             tree.appearance = self._appearance

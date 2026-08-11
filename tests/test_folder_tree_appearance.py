@@ -6,6 +6,7 @@ import pytest
 from rich.cells import cell_len
 from textual.app import App, ComposeResult
 
+from librarian.appearance import FolderAppearance
 from librarian.obsidian import PLUGIN_DATA_RELATIVE_PATH, NotebookNavigatorAppearance
 from librarian.widgets.tag_list import MarkdownDirectoryTree
 
@@ -20,6 +21,17 @@ LAPTOP = "\U000f0322"  # md-laptop, the nerd glyph for Lucide "computer"
 LAPTOP_EMOJI = "\U0001f4bb"  # 💻, the same icon in emoji style
 ROBOT = "\U0001f916"  # 🤖, configured as a literal emoji in the vault
 NERD_FOLDER = "\U000f024b"  # md-folder, the no-icon default
+
+
+def appearance_for(vault, style="nerd"):
+    """A FolderAppearance with the vault's plugin data as its only source."""
+    plugin = NotebookNavigatorAppearance.load(vault)
+    assert plugin is not None
+    return FolderAppearance(
+        glyph_style=style,
+        sources=(plugin,),
+        color_icon_only=plugin.color_icon_only,
+    )
 
 
 @pytest.fixture
@@ -70,7 +82,7 @@ async def render_labels(vault, appearance):
 
 @pytest.mark.asyncio
 async def test_lucide_icon_and_color_applied(vault):
-    labels = await render_labels(vault, NotebookNavigatorAppearance.load(vault))
+    labels = await render_labels(vault, appearance_for(vault))
     label = labels["techne"]
 
     assert LAPTOP in label.plain  # md-laptop from the "computer" icon
@@ -83,7 +95,7 @@ async def test_lucide_icon_and_color_applied(vault):
 
 @pytest.mark.asyncio
 async def test_emoji_icon_and_color_applied(vault):
-    labels = await render_labels(vault, NotebookNavigatorAppearance.load(vault))
+    labels = await render_labels(vault, appearance_for(vault))
     label = labels["kybernetes"]
 
     assert ROBOT in label.plain  # passed through verbatim
@@ -96,7 +108,7 @@ async def test_emoji_icon_and_color_applied(vault):
 
 @pytest.mark.asyncio
 async def test_unstyled_folder_gets_default_glyph_and_no_color(vault):
-    labels = await render_labels(vault, NotebookNavigatorAppearance.load(vault))
+    labels = await render_labels(vault, appearance_for(vault))
     label = labels["veritas"]
 
     assert label.plain.endswith("veritas")
@@ -115,7 +127,7 @@ async def test_unstyled_folder_gets_default_glyph_and_no_color(vault):
 @pytest.mark.asyncio
 async def test_icon_replaces_the_tree_toggle_glyph(vault):
     """One icon per row: the folder icon sits where the toggle glyph would be."""
-    labels = await render_labels(vault, NotebookNavigatorAppearance.load(vault))
+    labels = await render_labels(vault, appearance_for(vault))
     label = labels["techne"]
 
     assert label.plain.startswith(LAPTOP)  # the icon leads the row
@@ -126,7 +138,7 @@ async def test_icon_replaces_the_tree_toggle_glyph(vault):
 @pytest.mark.asyncio
 async def test_icon_carries_the_toggle_meta(vault):
     """Clicking the icon must still expand/collapse the folder."""
-    labels = await render_labels(vault, NotebookNavigatorAppearance.load(vault))
+    labels = await render_labels(vault, appearance_for(vault))
     label = labels["techne"]
 
     icon_span = label.spans[0]
@@ -137,7 +149,7 @@ async def test_icon_carries_the_toggle_meta(vault):
 @pytest.mark.asyncio
 async def test_clicking_icon_expands_folder(vault):
     """End-to-end: a click in the icon cell toggles the node."""
-    app = TreeApp(vault, NotebookNavigatorAppearance.load(vault))
+    app = TreeApp(vault, appearance_for(vault))
     async with app.run_test(size=(60, 20)) as pilot:
         tree = app.query_one("#directory-tree", MarkdownDirectoryTree)
         tree.root.expand()
@@ -166,7 +178,7 @@ async def test_clicking_icon_expands_folder(vault):
 @pytest.mark.asyncio
 async def test_color_applies_to_icon_and_name(vault):
     """colorIconOnly is false in this vault, so both are tinted."""
-    labels = await render_labels(vault, NotebookNavigatorAppearance.load(vault))
+    labels = await render_labels(vault, appearance_for(vault))
     label = labels["techne"]
 
     def color_at(offset: int) -> str | None:
@@ -183,7 +195,7 @@ async def test_color_applies_to_icon_and_name(vault):
 
 @pytest.mark.asyncio
 async def test_color_icon_only_leaves_name_untinted(vault):
-    appearance = NotebookNavigatorAppearance.load(vault)
+    appearance = appearance_for(vault)
     appearance.color_icon_only = True
     labels = await render_labels(vault, appearance)
     label = labels["techne"]
@@ -198,9 +210,62 @@ async def test_color_icon_only_leaves_name_untinted(vault):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("style", ["nerd", "emoji"])
+async def test_renders_without_any_appearance_source(tmp_path, style):
+    """The no-Obsidian case: default glyphs, aligned names, working toggle."""
+    root = tmp_path / "plain"
+    (root / "projects").mkdir(parents=True)
+    (root / "notes").mkdir()
+    (root / "notes" / "note.md").write_text("# note\n")
+
+    labels = await render_labels(root, FolderAppearance(glyph_style=style))
+    expected = NERD_FOLDER if style == "nerd" else "\U0001f4c1"
+
+    for name in ("projects", "notes"):
+        label = labels[name]
+        assert label.plain.startswith(expected)
+        assert label.plain.endswith(name)
+        assert label.spans[0].style.meta.get("toggle") is True
+
+    offsets = {
+        cell_len(label.plain[: label.plain.index(name)])
+        for name, label in labels.items()
+    }
+    assert len(offsets) == 1
+
+
+@pytest.mark.asyncio
+async def test_config_source_renders_without_a_vault(tmp_path):
+    """Icons set in Librarian's own config work with no vault present."""
+    from librarian.appearance import ConfigAppearance
+
+    root = tmp_path / "plain"
+    (root / "projects").mkdir(parents=True)
+
+    appearance = FolderAppearance(
+        glyph_style="nerd",
+        sources=(
+            ConfigAppearance(
+                root=root,
+                icons={"projects": "briefcase"},
+                colors={"projects": "#8b5cf6"},
+            ),
+        ),
+    )
+    label = (await render_labels(root, appearance))["projects"]
+
+    assert label.plain.startswith("\U000f00d6")  # md-briefcase
+    assert any(
+        span.style.color and span.style.color.triplet.hex == "#8b5cf6"
+        for span in label.spans
+        if span.style.color is not None
+    )
+
+
+@pytest.mark.asyncio
 async def test_emoji_style_renders_emoji_icons(vault):
     """The emoji style is the fallback for terminals without a Nerd Font."""
-    labels = await render_labels(vault, NotebookNavigatorAppearance.load(vault, "emoji"))
+    labels = await render_labels(vault, appearance_for(vault, "emoji"))
 
     assert labels["techne"].plain.startswith(LAPTOP_EMOJI)
     assert LAPTOP not in labels["techne"].plain
@@ -215,7 +280,7 @@ async def test_names_align_across_icon_widths(vault, style):
     This is the constraint that forces uniform icon padding: a vault can mix
     one-cell Nerd Font glyphs with two-cell emoji in the same tree.
     """
-    labels = await render_labels(vault, NotebookNavigatorAppearance.load(vault, style))
+    labels = await render_labels(vault, appearance_for(vault, style))
     offsets = {
         name: cell_len(label.plain[: label.plain.index(name)])
         for name, label in labels.items()
@@ -241,7 +306,7 @@ async def test_setting_appearance_later_applies_it(vault):
         tree.root.expand()
         await pilot.pause()
 
-        tree.appearance = NotebookNavigatorAppearance.load(vault)
+        tree.appearance = appearance_for(vault)
         await pilot.pause()
 
         techne = next(
@@ -254,7 +319,7 @@ async def test_setting_appearance_later_applies_it(vault):
 @pytest.mark.asyncio
 async def test_clearing_appearance_restores_default_toggle(vault):
     """Pointing at a non-vault directory falls back to the stock tree."""
-    app = TreeApp(vault, NotebookNavigatorAppearance.load(vault))
+    app = TreeApp(vault, appearance_for(vault))
     async with app.run_test(size=(60, 20)) as pilot:
         tree = app.query_one("#directory-tree", MarkdownDirectoryTree)
         tree.root.expand()

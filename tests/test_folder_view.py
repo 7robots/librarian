@@ -2,7 +2,14 @@
 
 import pytest
 
-from librarian.config import CalendarConfig, Config, ObsidianConfig, TagConfig
+from librarian.config import (
+    CalendarConfig,
+    Config,
+    FoldersConfig,
+    IconConfig,
+    ObsidianConfig,
+    TagConfig,
+)
 from librarian.database import add_file, batch_writes
 from librarian.widgets import FileList, TagList
 from librarian.widgets.tag_list import TOOLS, ToolItem
@@ -35,6 +42,8 @@ def config(vault, tmp_path):
         export_directory=tmp_path / "exports",
         data_directory=tmp_path / "data",
         calendar=CalendarConfig(enabled=False),
+        icons=IconConfig(style="nerd"),
+        folders=FoldersConfig(),
         obsidian=ObsidianConfig(),
     )
 
@@ -304,6 +313,64 @@ class TestSearchExit:
 
             assert file_list.get_header_text() == "FILES (#tagged)"
             assert app.focused is tag_list.all_tags_list_view
+
+
+class TestWithoutNotebookNavigator:
+    """The scan directory here is a plain folder — no vault, no plugin."""
+
+    async def test_app_starts_and_lists_folders(self, app):
+        async with app.run_test(size=(100, 30)) as pilot:
+            await pilot.pause()
+            tag_list = app.query_one(TagList)
+            file_list = app.query_one(FileList)
+
+            assert tag_list.active_tool == "folders"
+            assert file_list.get_header_text() == "FILES (vault/)"
+
+    async def test_appearance_has_no_sources(self, app):
+        async with app.run_test(size=(100, 30)) as pilot:
+            await pilot.pause()
+            appearance = app.query_one(TagList).directory_tree.appearance
+
+            assert appearance is not None
+            assert appearance.sources == ()
+
+    async def test_folders_render_with_default_glyphs(self, app):
+        async with app.run_test(size=(100, 30)) as pilot:
+            await pilot.pause()
+            tree = app.query_one(TagList).directory_tree
+            tree.root.expand()
+            await pilot.pause()
+
+            label = tree.render_label(
+                folder_of(tree, "techne"), tree.rich_style, tree.rich_style
+            )
+            assert label.plain.startswith("\U000f024b")  # md-folder
+            assert label.plain.endswith("techne")
+
+    async def test_config_icons_apply_without_a_vault(self, config, tmp_index):
+        """Librarian's own config is a full replacement for the plugin."""
+        from librarian.app import LibrarianApp
+
+        config.folders.icons["techne"] = "computer"
+        config.folders.colors["techne"] = "#6b7280"
+
+        app = LibrarianApp(config)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await pilot.pause()
+            tree = app.query_one(TagList).directory_tree
+            tree.root.expand()
+            await pilot.pause()
+
+            label = tree.render_label(
+                folder_of(tree, "techne"), tree.rich_style, tree.rich_style
+            )
+            assert label.plain.startswith("\U000f0322")  # md-laptop
+            assert any(
+                span.style.color and span.style.color.triplet.hex == "#6b7280"
+                for span in label.spans
+                if span.style.color is not None
+            )
 
 
 class TestToolSwitching:

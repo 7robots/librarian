@@ -11,6 +11,7 @@ from textual.widgets import Footer, Static
 from textual.worker import Worker
 
 from .actions import CalendarActionsMixin, FileActionsMixin, NavigationActionsMixin
+from .appearance import build_folder_appearance
 from .calendar import clear_cache as clear_calendar_cache
 from .calendar_store import init_store
 from .config import Config
@@ -112,7 +113,7 @@ class LibrarianApp(
         with Horizontal(id="main-container"):
             yield TagList(
                 scan_directory=self.config.scan_directory,
-                icon_style=self.config.obsidian.icon_style,
+                appearance=build_folder_appearance(self.config),
                 id="tag-list",
                 classes="panel",
             )

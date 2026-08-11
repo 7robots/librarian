@@ -7,6 +7,8 @@ import pytest
 from librarian.config import (
     CalendarConfig,
     Config,
+    FoldersConfig,
+    IconConfig,
     ObsidianConfig,
     TagConfig,
     get_config_dir,
@@ -137,13 +139,7 @@ class TestCalendarConfig:
         assert cc.icalpal_path == ""
 
 
-class TestObsidianConfig:
-    def test_default_is_nerd(self):
-        assert ObsidianConfig().icon_style == "nerd"
-
-    def test_config_default(self):
-        assert Config().obsidian.icon_style == "nerd"
-
+class TestAppearanceConfig:
     def _write_config(self, tmp_path, monkeypatch, body):
         config_dir = tmp_path / ".config" / "librarian"
         config_dir.mkdir(parents=True)
@@ -157,19 +153,86 @@ class TestObsidianConfig:
         monkeypatch.setattr("librarian.config.get_default_data_dir", lambda: data_dir)
         return config_path
 
-    def test_loads_icon_style(self, tmp_path, monkeypatch):
-        self._write_config(
-            tmp_path, monkeypatch, '[obsidian]\nicon_style = "emoji"\n'
-        )
-        assert Config.load().obsidian.icon_style == "emoji"
+    def test_defaults(self):
+        config = Config()
+        assert config.icons.style == "auto"
+        assert config.folders.icons == {}
+        assert config.folders.colors == {}
+        assert config.obsidian.enabled is True
 
-    def test_missing_section_uses_default(self, tmp_path, monkeypatch):
+    def test_loads_icon_style(self, tmp_path, monkeypatch):
+        self._write_config(tmp_path, monkeypatch, '[icons]\nstyle = "emoji"\n')
+        assert Config.load().icons.style == "emoji"
+
+    def test_loads_folder_icons_and_colors(self, tmp_path, monkeypatch):
+        self._write_config(
+            tmp_path,
+            monkeypatch,
+            """
+[folders.icons]
+"projects" = "briefcase"
+"projects/2026" = "calendar"
+
+[folders.colors]
+"projects" = "#8b5cf6"
+""",
+        )
+        config = Config.load()
+
+        assert config.folders.icons == {
+            "projects": "briefcase",
+            "projects/2026": "calendar",
+        }
+        assert config.folders.colors == {"projects": "#8b5cf6"}
+
+    def test_ignores_non_string_folder_values(self, tmp_path, monkeypatch):
+        self._write_config(
+            tmp_path,
+            monkeypatch,
+            '[folders.icons]\n"a" = "book"\n"b" = 3\n"c" = ""\n',
+        )
+        assert Config.load().folders.icons == {"a": "book"}
+
+    def test_obsidian_can_be_disabled(self, tmp_path, monkeypatch):
+        self._write_config(tmp_path, monkeypatch, "[obsidian]\nenabled = false\n")
+        assert Config.load().obsidian.enabled is False
+
+    def test_missing_sections_use_defaults(self, tmp_path, monkeypatch):
         self._write_config(tmp_path, monkeypatch, 'editor = "code"\n')
-        assert Config.load().obsidian.icon_style == "nerd"
+        config = Config.load()
+
+        assert config.icons.style == "auto"
+        assert config.folders.icons == {}
+        assert config.obsidian.enabled is True
 
     def test_round_trip(self, tmp_path, monkeypatch):
         config_path = self._write_config(tmp_path, monkeypatch, "")
-        config = Config(obsidian=ObsidianConfig(icon_style="emoji"))
-        config.save()
-        assert 'icon_style = "emoji"' in config_path.read_text()
-        assert Config.load().obsidian.icon_style == "emoji"
+        Config(
+            icons=IconConfig(style="emoji"),
+            folders=FoldersConfig(
+                icons={"my notes/a.b": "book"}, colors={"my notes": "#fff"}
+            ),
+            obsidian=ObsidianConfig(enabled=False),
+        ).save()
+
+        written = config_path.read_text()
+        assert 'style = "emoji"' in written
+        assert "[folders.icons]" in written
+        assert "enabled = false" in written
+
+        reloaded = Config.load()
+        assert reloaded.icons.style == "emoji"
+        # Keys with spaces and dots must survive quoting.
+        assert reloaded.folders.icons == {"my notes/a.b": "book"}
+        assert reloaded.folders.colors == {"my notes": "#fff"}
+        assert reloaded.obsidian.enabled is False
+
+    def test_round_trip_with_no_folder_entries(self, tmp_path, monkeypatch):
+        """Empty tables are commented out, so reload must not see stray keys."""
+        config_path = self._write_config(tmp_path, monkeypatch, "")
+        Config().save()
+
+        assert "# [folders.icons]" in config_path.read_text()
+        reloaded = Config.load()
+        assert reloaded.folders.icons == {}
+        assert reloaded.folders.colors == {}

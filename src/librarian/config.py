@@ -21,6 +21,32 @@ def get_default_data_dir() -> Path:
     return Path.home() / ".local" / "share" / "librarian"
 
 
+def _string_map(raw: object) -> dict[str, str]:
+    """Coerce a parsed TOML table to a str->str mapping, dropping bad entries."""
+    if not isinstance(raw, dict):
+        return {}
+    return {str(k): v for k, v in raw.items() if isinstance(v, str) and v.strip()}
+
+
+def _toml_key(key: str) -> str:
+    """Quote a TOML key. Folder keys contain slashes, dots, and spaces."""
+    escaped = key.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+def _toml_table(name: str, values: dict[str, str], comment: str = "") -> list[str]:
+    """Render a TOML table, commented out entirely when it has no entries."""
+    if not values:
+        return [f"# [{name}]", f"# {comment}" if comment else "# (none set)"]
+
+    lines = [f"[{name}]"]
+    if comment:
+        lines.insert(0, f"# {comment}")
+    for key, value in values.items():
+        lines.append(f"{_toml_key(key)} = \"{value}\"")
+    return lines
+
+
 @dataclass
 class TagConfig:
     """Tag filtering configuration."""
@@ -30,12 +56,29 @@ class TagConfig:
 
 
 @dataclass
+class IconConfig:
+    """How folder icon names are rendered as terminal glyphs."""
+
+    # "auto" detects whether the terminal can show Nerd Font glyphs; "nerd"
+    # forces them (they take on folder colors); "emoji" works anywhere but
+    # keeps the emoji's own colors.
+    style: Literal["auto", "nerd", "emoji"] = "auto"
+
+
+@dataclass
+class FoldersConfig:
+    """Per-folder icons and colors, keyed by path relative to scan_directory."""
+
+    icons: dict[str, str] = field(default_factory=dict)
+    colors: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
 class ObsidianConfig:
     """Appearance mirroring for Obsidian vaults (Notebook Navigator plugin)."""
 
-    # "nerd" uses Nerd Font glyphs, which take on folder colors and need a Nerd
-    # Font in the terminal; "emoji" works anywhere but ignores those colors.
-    icon_style: Literal["nerd", "emoji"] = "nerd"
+    # Set false to ignore the plugin even when the scan directory is in a vault.
+    enabled: bool = True
 
 
 @dataclass
@@ -58,6 +101,8 @@ class Config:
     export_directory: Path = field(default_factory=lambda: Path.home() / "Downloads")
     data_directory: Path = field(default_factory=get_default_data_dir)
     calendar: CalendarConfig = field(default_factory=CalendarConfig)
+    icons: IconConfig = field(default_factory=IconConfig)
+    folders: FoldersConfig = field(default_factory=FoldersConfig)
     obsidian: ObsidianConfig = field(default_factory=ObsidianConfig)
 
     def get_index_path(self) -> Path:
@@ -117,10 +162,21 @@ class Config:
             icalpal_path=cal_data.get("icalpal_path", ""),
         )
 
-        # Parse obsidian appearance config
+        # Parse icon rendering config
+        icons_data = data.get("icons", {})
+        icons = IconConfig(style=icons_data.get("style", "auto"))
+
+        # Parse per-folder icons/colors
+        folders_data = data.get("folders", {})
+        folders = FoldersConfig(
+            icons=_string_map(folders_data.get("icons")),
+            colors=_string_map(folders_data.get("colors")),
+        )
+
+        # Parse obsidian integration config
         obsidian_data = data.get("obsidian", {})
         obsidian = ObsidianConfig(
-            icon_style=obsidian_data.get("icon_style", "nerd"),
+            enabled=bool(obsidian_data.get("enabled", True)),
         )
 
         config = cls(
@@ -131,6 +187,8 @@ class Config:
             export_directory=export_directory,
             data_directory=data_directory,
             calendar=calendar,
+            icons=icons,
+            folders=folders,
             obsidian=obsidian,
         )
 
@@ -178,11 +236,37 @@ class Config:
 
         lines.extend([
             '',
-            '# Obsidian folder icons/colors (Notebook Navigator plugin)',
+            '# Folder icon glyphs: "auto" detects Nerd Font support, or force',
+            '# "nerd" (tinted with the folder color) or "emoji" (works anywhere)',
+            '[icons]',
+            f'style = "{self.icons.style}"',
+            '',
+            '# Per-folder icons and colors, keyed by path relative to',
+            '# scan_directory. Icon names are Lucide names, e.g. "book-open".',
+        ])
+
+        lines.extend(
+            _toml_table(
+                "folders.icons",
+                self.folders.icons,
+                comment='e.g. "projects" = "briefcase"',
+            )
+        )
+        lines.append('')
+        lines.extend(
+            _toml_table(
+                "folders.colors",
+                self.folders.colors,
+                comment='e.g. "projects" = "#8b5cf6"',
+            )
+        )
+
+        lines.extend([
+            '',
+            '# Mirror folder icons/colors from Obsidian\'s Notebook Navigator',
+            '# plugin when the scan directory is inside a vault',
             '[obsidian]',
-            '# "nerd" needs a Nerd Font and tints icons with the folder color;',
-            '# "emoji" works in any terminal but keeps the emoji\'s own colors',
-            f'icon_style = "{self.obsidian.icon_style}"',
+            f'enabled = {str(self.obsidian.enabled).lower()}',
             '',
             '# Calendar integration (requires icalPal)',
             '[calendar]',
