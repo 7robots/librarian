@@ -13,30 +13,19 @@ path rather than building it: a plain (non-vault) scan directory, a vault withou
 an unreadable or partial `data.json`, and `icon_style = "emoji"` for terminals lacking a Nerd
 Font. Consider detecting Nerd Font availability instead of defaulting to `nerd` blind.
 
-### Change the opening tool
-Tags currently opens by default, which reflects Librarian's original tag-centric design. With
-content organized by folder, the default should lead with folders instead. Set in
-`TagList.active_tool` / the initial `_switch_panel()` call.
-
-### Swap the Tools and Folders panels
-The left sidebar currently stacks Tools on top and the content panel (Tags/Folders/Calendar)
-below, split 50/50. Swap them so the content panel is on top and Tools below.
-
-### Rework the file browser in folder view
-When the Folders tool is active, the Files panel should reflect the selected *folder* rather than
-the selected tag — i.e. list that folder's files, updating as the tree cursor moves, instead of
-staying bound to tag selection. Today folder-tree selection only fires `FileSelected` for
-individual files and leaves the Files panel showing the last tag's results.
-
-### Remove the Agents tool
-Drop the "Agents" entry from the Tools menu and its placeholder panel.
-
 ### Replace TaskPaper with a remtui re-implementation
 Swap the TaskPaper tool for an Apple Reminders tool, re-implementing
 [remtui](https://github.com/7robots/remtui) (Textual TUI over the `remctl` CLI) inside Librarian
 rather than shelling out to an external editor the way TaskPaper does. Touches the Tools menu,
 the `t` binding, `n` (new-file behavior per active tool), the `taskpaper` config key, and the
 `.taskpaper` handling in the scanner and file list.
+
+Worth splitting into two decisions before writing code: *adding* a Reminders tool, versus
+*removing* TaskPaper support. TaskPaper currently runs through 9 modules, including
+`taskpaper.py` (taskpaper→markdown for preview and export) and `.taskpaper` handling in the
+scanner, watcher, database, preview, and export. Reminders live in Apple Reminders via `remctl`
+rather than in files, so the new tool cannot reuse the index, file list, or preview the way
+TaskPaper does.
 
 ## Deferred
 

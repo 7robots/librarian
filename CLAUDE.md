@@ -24,8 +24,8 @@ src/librarian/
 └── widgets/
     ├── __init__.py
     ├── banner.py        # Custom ASCII art banner replacing default Textual Header
-    ├── tag_list.py      # Tools sidebar (top) + switchable content panel (Tags/Folders/Calendar/placeholders)
-    ├── file_list.py     # Files with selected tag (ListView + navigation mode)
+    ├── tag_list.py      # Switchable content panel (Tags/Folders/Calendar, top) + Tools menu (bottom)
+    ├── file_list.py     # Files for the selected folder or tag (ListView + search/navigation modes)
     ├── file_info.py     # RenameModal, MoveModal, and AssociateModal for file operations
     ├── calendar_list.py # Calendar meeting list widget
     └── preview.py       # Markdown preview pane (VerticalScroll + Markdown)
@@ -37,7 +37,7 @@ src/librarian/
 - **Index storage**: JSON at configurable `data_directory` (default: `~/.local/share/librarian/`). Atomic writes for iCloud compatibility.
 - **Tag format**: Inline hashtags matching `#[a-zA-Z][a-zA-Z0-9_-]*`
 - **Auto-refresh**: watchdog monitors scan directory with debouncing
-- **Tools sidebar**: Top-level navigation hub with Tools menu (Tags, Folders, TaskPaper, Calendar, Agents) and switchable content panel
+- **Folder-first sidebar**: Content panel (Folders/Tags/Calendar) on top, Tools menu (Tags, Folders, TaskPaper, Calendar) below. Opens on Folders — see `DEFAULT_TOOL` in `widgets/tag_list.py`
 - **Wiki links**: `[[note.md]]` or `[[note|display text]]` syntax, preprocessed to `wikilink:` scheme
 - **Export**: HTML export with configurable output directory (sanitized output)
 - **Banner**: Custom ASCII art header (`widgets/banner.py`) with per-letter colorization, replacing the default Textual Header
@@ -61,13 +61,26 @@ Denormalized structure with tags inline per file. Only files containing at least
 ## UI Layout
 
 The app has four panels:
-- **Left sidebar** (25% width): Tools menu (30% height) and switchable content panel (70% height)
-  - Tools menu: Tags, Folders, TaskPaper, Calendar, Agents
-  - Content panel switches between: All Tags (ListView), Folders (DirectoryTree), or placeholder text
-- **Right top** (33% height): File list for selected tag
+- **Left sidebar** (25% width): switchable content panel (50% height) on top, Tools menu (50% height) below
+  - Content panel switches between: Folders (DirectoryTree), All Tags (ListView), Calendar (CalendarList)
+  - Tools menu: Tags, Folders, TaskPaper, Calendar
+- **Right top** (33% height): File list — the selected folder's files in folder view, the selected tag's files otherwise
 - **Right bottom** (67% height): Markdown preview
 
 Layout uses percentage-based CSS for dynamic terminal resizing.
+
+### Folder view
+With the Folders tool active, the Files panel follows the folder tree cursor: moving onto a folder
+lists that folder's files. Two deliberate choices:
+
+- **Direct children only** — descendants are not included, matching Notebook Navigator's own
+  `includeDescendantNotes = false`. Purely organizational folders therefore show an empty panel.
+- **Read from the filesystem, not the index** (`scanner.list_folder_files()`) — the index holds only
+  files carrying at least one hashtag, so a folder-organized vault would look nearly empty if
+  listed from there.
+
+`LibrarianApp._refresh_file_panel()` dispatches on `active_tool`, so an index update (background
+scan or file watcher) refreshes the folder listing rather than replacing it with a tag's files.
 
 ## Common Development Tasks
 
@@ -107,11 +120,14 @@ cat \$(uv run python -c "from librarian.config import Config; print(Config.load(
 
 ## Widget Communication
 
-- `TagList` contains Tools ListView, All Tags ListView, DirectoryTree, and placeholder Static
-  - Tracks `active_tool` property (`"tags"`, `"folders"`, `"taskpaper"`, `"calendar"`, `"agents"`)
+- `TagList` contains the content panel (DirectoryTree, All Tags ListView, CalendarList) and the Tools ListView
+  - Tracks `active_tool` property (`"folders"`, `"tags"`, `"taskpaper"`, `"calendar"`)
   - Emits `TagSelected` when a tag is selected
+  - Emits `FolderHighlighted` when the folder tree cursor moves to a folder
   - Emits `FileSelected` when a file is selected in folder browser
   - Emits `ToolLaunched` when a tool (e.g. TaskPaper) is selected from Tools menu
+  - `_switch_panel()` republishes the active selection so the Files panel follows the tool
+  - `initialize_default_tool()` syncs the menu highlight and content panel at startup without taking focus
 - `FileList` emits `FileHighlighted` when cursor moves (updates preview)
 - `Preview` receives file paths via `show_file()` async method, scrollable when focused
 - `AssociateModal` (in `file_info.py`) presents a list of `#meetings`-tagged files for linking to a calendar event; returns the selected `Path` or `None`
@@ -121,10 +137,10 @@ cat \$(uv run python -c "from librarian.config import Config; print(Config.load(
 ## Keyboard Navigation
 
 Tab cycles through panels in clockwise order:
-1. Tools (top-left)
+1. Content panel (top-left) — resolves to the active tool's view (Folders/Tags/Calendar)
 2. Files (top-right)
 3. Preview (bottom-right)
-4. All Tags (bottom-left)
+4. Tools (bottom-left)
 
 Custom focus order is defined in `LibrarianApp.FOCUS_ORDER` with overridden `action_focus_next`/`action_focus_previous` methods.
 
@@ -148,7 +164,7 @@ Key bindings:
 - Widgets inherit from `Vertical` container (not `Static`)
 - ListViews use `height: 1fr` to fill available space within their sections
 - Headers use fixed `height: 1`
-- TagList: Tools list at 30% height, content panel at 70% height
+- TagList: content panel and Tools list each at `height: 1fr` (50/50)
 - Content panel sections toggled via CSS `hidden` class
 - Banner widget has fixed `height: 5` with `width: 100%`
 - Per-panel border colors with `:focus-within` for active indication:
