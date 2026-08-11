@@ -5,6 +5,7 @@ from pathlib import Path
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
+from textual.css.query import NoMatches
 from textual.timer import Timer
 from textual.widgets import Footer, Static
 from textual.worker import Worker
@@ -273,11 +274,17 @@ class LibrarianApp(
         """Actually update the preview after debounce delay."""
         self._preview_timer = None
 
-        file_list = self.query_one("#file-list", FileList)
+        # The debounce timer can fire while the app is shutting down, after the
+        # widgets have gone away.
+        try:
+            file_list = self.query_one("#file-list", FileList)
+            preview = self.query_one("#preview", Preview)
+        except NoMatches:
+            return
+
         if file_path not in file_list._files:
             return
 
-        preview = self.query_one("#preview", Preview)
         preview.query_one("#preview-header", Static).update(
             f"PREVIEW - {file_path.name}"
         )
