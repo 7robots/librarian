@@ -20,7 +20,9 @@ src/librarian/
 ├── export.py            # Export to HTML functionality (with sanitization)
 ├── calendar.py          # icalPal wrapper for fetching calendar events
 ├── calendar_store.py    # Event-to-file association storage (sidecar JSON)
-├── obsidian.py          # Mirrors folder icons/colors from Obsidian's Notebook Navigator plugin
+├── icons.py             # Icon-name -> terminal glyph tables (Nerd Font / emoji) + style detection
+├── appearance.py        # Layered folder appearance: config > Notebook Navigator > defaults
+├── obsidian.py          # Reads folder icons/colors from Obsidian's Notebook Navigator plugin
 └── widgets/
     ├── __init__.py
     ├── banner.py        # Custom ASCII art banner replacing default Textual Header
@@ -187,8 +189,17 @@ class CalendarConfig:
     icalpal_path: str = ""   # empty = auto-detect
 
 @dataclass
+class IconConfig:
+    style: Literal["auto", "nerd", "emoji"] = "auto"
+
+@dataclass
+class FoldersConfig:
+    icons: dict[str, str]   # relative folder path -> Lucide icon name
+    colors: dict[str, str]  # relative folder path -> hex color
+
+@dataclass
 class ObsidianConfig:
-    icon_style: Literal["nerd", "emoji"] = "nerd"
+    enabled: bool = True
 
 @dataclass
 class Config:
@@ -199,6 +210,8 @@ class Config:
     export_directory: Path  # Default: ~/Downloads
     data_directory: Path    # Default: ~/.local/share/librarian
     calendar: CalendarConfig
+    icons: IconConfig
+    folders: FoldersConfig
     obsidian: ObsidianConfig
 ```
 
@@ -337,46 +350,63 @@ Press `n` to create a new file in the scan directory. The file type depends on t
 - Includes `#meetings` tag
 - Auto-associates with the selected calendar event
 
-## Obsidian Notebook Navigator Appearance
+## Folder Appearance
 
-When `scan_directory` points at (or inside) an Obsidian vault that uses the
-[Notebook Navigator](https://github.com/johansan/notebook-navigator) plugin, the Folders panel
-mirrors that plugin's per-folder icons and colors.
+Folder icons and colors come from layered sources, consulted in precedence order **per key**:
 
-### Source of truth
-Read at startup from `<vault>/.obsidian/plugins/notebook-navigator/data.json`. Nothing is copied
-into Librarian's own config, so changing a folder's icon or color in Obsidian shows up on the next
-launch. `obsidian.py` reads these keys:
+1. Librarian's own config — `[folders.icons]` / `[folders.colors]`
+2. Obsidian's Notebook Navigator plugin, when the scan directory is inside a vault
+3. A plain folder glyph, with no color
 
-| Key | Use |
-|---|---|
-| `folderIcons` | Vault-relative folder path → Lucide icon name or `emoji:<char>` |
-| `folderColors` | Vault-relative folder path → hex color |
-| `inheritFolderColors` | When true, subfolders inherit the nearest ancestor's color |
-| `showFolderIcons` | When false, icons are suppressed (colors still apply) |
-| `colorIconOnly` | When true, the color tints only the icon, not the folder name |
-| `tagColors` | Loaded but not yet applied to the tag list |
+Per key matters: config can set only a *color* for a folder while the plugin supplies its *icon*, and
+both apply. A source winning outright would make that impossible.
 
-Librarian's own `[obsidian]` config section controls only how those icons are drawn in a terminal:
+Nothing here requires Obsidian. `appearance.py` owns the layering, `icons.py` the glyphs, and
+`obsidian.py` is one optional source — with no config and no plugin, every folder gets the default
+glyph, which is what a stock Textual tree shows anyway.
+
+### Config
 
 ```toml
+[icons]
+style = "auto"          # auto | nerd | emoji
+
+[folders.icons]         # keys are paths relative to scan_directory
+"projects" = "briefcase"
+"projects/2026" = "calendar"
+
+[folders.colors]
+"projects" = "#8b5cf6"  # colors inherit to subfolders
+
 [obsidian]
-icon_style = "nerd"  # or "emoji"
+enabled = true          # false ignores the plugin even inside a vault
 ```
 
+Icon names are [Lucide](https://lucide.dev/icons/) names — the same vocabulary Notebook Navigator
+uses. `Config.save()` writes these tables by hand (`tomllib` is read-only) with every key quoted,
+since folder paths contain slashes, dots, and spaces; empty tables are written commented out.
+
+Note that config keys are relative to `scan_directory`, so changing that setting leaves them stale.
+
 ### Icon styles
-Notebook Navigator's default icons are **Lucide**, which Obsidian renders as inline SVG — there is no
-font or codepoint to reuse in a terminal, and Nerd Fonts does not carry Lucide
-([nerd-fonts#1389](https://github.com/ryanoasis/nerd-fonts/issues/1389)). Librarian therefore maps
-Lucide *names* to glyphs, in one of two styles set by `icon_style` in `[obsidian]`:
+Lucide has no terminal-renderable form — Obsidian draws it as inline SVG, and Nerd Fonts does not
+carry the set ([nerd-fonts#1389](https://github.com/ryanoasis/nerd-fonts/issues/1389)). So names map
+to glyphs in one of two styles:
 
 | Style | Table | Notes |
 |---|---|---|
-| `nerd` (default) | `NERD_GLYPHS` | Material Design Icons from Nerd Fonts. Monochrome, so they take the folder color. Ghostty embeds *Symbols Nerd Font*, so nothing needs installing there. |
+| `nerd` | `NERD_GLYPHS` | Material Design Icons from Nerd Fonts. Monochrome, so they take the folder color. |
 | `emoji` | `EMOJI_GLYPHS` | For terminals without a Nerd Font. Emoji carry their own colors and ignore the folder color. |
 
-Icons configured in Obsidian as literal emoji (`emoji:🤖`) pass through unchanged in both styles,
-since that is what Obsidian itself displays.
+`auto` (the default) picks between them in `icons.detect_glyph_style()`, which needs two signals
+because neither suffices alone: a terminal allowlist (`NERD_FONT_TERMINALS` — Ghostty and WezTerm
+embed the font in their own binary, so a font scan misses them) and a scan of the macOS font
+directories for a filename containing `nerd` (which catches anyone who installed one in an
+unrecognized terminal). Emoji is the fallback, since emoji render nearly everywhere. It is a
+heuristic — set `style` explicitly to override it.
+
+Names prefixed `emoji:` (e.g. `emoji:🤖`) are literal emoji and pass through unchanged in both
+styles, since that is what Obsidian shows for them.
 
 `NERD_GLYPHS` codepoints were resolved from the Nerd Fonts `glyphnames.json`, not written by hand;
 each entry's comment records its `md-*` source name. To re-verify or extend the table:
@@ -387,22 +417,36 @@ curl -sL -o glyphnames.json https://raw.githubusercontent.com/ryanoasis/nerd-fon
 ```
 
 A test asserts every glyph sits inside the Material Design range (U+F0001–U+F1AF0) and is
-single-cell, which catches a mistyped codepoint before it renders as tofu.
+single-cell, which catches a mistyped codepoint before it renders as tofu. The table currently
+covers 66 of Lucide's 2,025 names; anything else falls back to a plain folder glyph.
 
-### Implementation
-- `obsidian.find_vault_root()` walks up from the scan directory looking for a `.obsidian` directory,
-  so pointing Librarian at a subfolder of a vault still resolves the right icon/color keys.
-- Unmapped icon names fall back to a plain folder glyph for the active style. Glyphs are padded to a
-  fixed cell width plus a separating space (`pad_glyph()`) so folder names align in a column — needed
-  because one tree can mix one-cell Nerd Font glyphs with two-cell emoji.
+### Notebook Navigator source
+Read at startup from `<vault>/.obsidian/plugins/notebook-navigator/data.json`. Nothing is copied into
+Librarian's config, so changing an icon in Obsidian shows up on the next launch. These keys are used:
+
+| Key | Use |
+|---|---|
+| `folderIcons` | Vault-relative folder path → Lucide icon name or `emoji:<char>` |
+| `folderColors` | Vault-relative folder path → hex color |
+| `inheritFolderColors` | When true, subfolders inherit the nearest ancestor's color |
+| `showFolderIcons` | When false, this source supplies no icons (colors still apply) |
+| `colorIconOnly` | When true, the color tints only the icon, not the folder name |
+| `tagColors` | Loaded but not yet applied to the tag list |
+
+`find_vault_root()` walks up from the scan directory looking for a `.obsidian` directory, so pointing
+Librarian at a subfolder of a vault still resolves the right keys. The source returns icon *names*,
+never glyphs — turning names into glyphs is `icons.py`'s job.
+
+### Rendering
 - `MarkdownDirectoryTree.render_label()` replaces the tree's expand/collapse glyph with the folder's
   icon, so each row shows a single icon. The icon keeps `TOGGLE_STYLE` (from `textual.widgets._tree`),
   which is the meta `Tree._on_click` looks for — so clicking the icon still expands/collapses.
-  Folders with no configured icon keep Textual's `📁`/`📂`, which continue to flip on expand.
-- Files are left unstyled — Notebook Navigator styles folders only.
+- Folders with no configured icon get `md-folder`/`md-folder_open` (or `📁`/`📂`), which continue to
+  flip on expand; a configured icon is the same open or closed.
+- Glyphs are padded to a fixed cell width plus a separating space (`pad_glyph()`) so folder names
+  align in a column — needed because one tree can mix one-cell Nerd Font glyphs with two-cell emoji.
+- Files are left unstyled — folders only.
 - Setting `tree.appearance = None` restores the stock Textual tree.
-- Everything degrades to the stock tree when the directory isn't a vault, the plugin isn't
-  installed, or `data.json` is unreadable.
 
 ## Export to HTML
 
