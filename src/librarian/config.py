@@ -30,6 +30,15 @@ class TagConfig:
 
 
 @dataclass
+class ObsidianConfig:
+    """Appearance mirroring for Obsidian vaults (Notebook Navigator plugin)."""
+
+    # "nerd" uses Nerd Font glyphs, which take on folder colors and need a Nerd
+    # Font in the terminal; "emoji" works anywhere but ignores those colors.
+    icon_style: Literal["nerd", "emoji"] = "nerd"
+
+
+@dataclass
 class CalendarConfig:
     """Calendar integration configuration."""
 
@@ -49,6 +58,7 @@ class Config:
     export_directory: Path = field(default_factory=lambda: Path.home() / "Downloads")
     data_directory: Path = field(default_factory=get_default_data_dir)
     calendar: CalendarConfig = field(default_factory=CalendarConfig)
+    obsidian: ObsidianConfig = field(default_factory=ObsidianConfig)
 
     def get_index_path(self) -> Path:
         """Get the JSON index file path based on configured data directory."""
@@ -107,6 +117,12 @@ class Config:
             icalpal_path=cal_data.get("icalpal_path", ""),
         )
 
+        # Parse obsidian appearance config
+        obsidian_data = data.get("obsidian", {})
+        obsidian = ObsidianConfig(
+            icon_style=obsidian_data.get("icon_style", "nerd"),
+        )
+
         config = cls(
             scan_directory=scan_directory,
             editor=editor,
@@ -115,6 +131,7 @@ class Config:
             export_directory=export_directory,
             data_directory=data_directory,
             calendar=calendar,
+            obsidian=obsidian,
         )
 
         # Ensure data directory exists
@@ -160,6 +177,12 @@ class Config:
             lines.append('whitelist = []  # only used if mode = "whitelist"')
 
         lines.extend([
+            '',
+            '# Obsidian folder icons/colors (Notebook Navigator plugin)',
+            '[obsidian]',
+            '# "nerd" needs a Nerd Font and tints icons with the folder color;',
+            '# "emoji" works in any terminal but keeps the emoji\'s own colors',
+            f'icon_style = "{self.obsidian.icon_style}"',
             '',
             '# Calendar integration (requires icalPal)',
             '[calendar]',

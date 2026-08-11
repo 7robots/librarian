@@ -4,7 +4,14 @@ from pathlib import Path
 
 import pytest
 
-from librarian.config import Config, TagConfig, CalendarConfig, get_config_dir, get_default_data_dir
+from librarian.config import (
+    CalendarConfig,
+    Config,
+    ObsidianConfig,
+    TagConfig,
+    get_config_dir,
+    get_default_data_dir,
+)
 
 
 class TestConfigDefaults:
@@ -128,3 +135,41 @@ class TestCalendarConfig:
         assert cc.enabled is True
         assert cc.calendar_name == ""
         assert cc.icalpal_path == ""
+
+
+class TestObsidianConfig:
+    def test_default_is_nerd(self):
+        assert ObsidianConfig().icon_style == "nerd"
+
+    def test_config_default(self):
+        assert Config().obsidian.icon_style == "nerd"
+
+    def _write_config(self, tmp_path, monkeypatch, body):
+        config_dir = tmp_path / ".config" / "librarian"
+        config_dir.mkdir(parents=True)
+        config_path = config_dir / "config.toml"
+        data_dir = tmp_path / ".local" / "share" / "librarian"
+        data_dir.mkdir(parents=True)
+        config_path.write_text(body)
+
+        monkeypatch.setattr("librarian.config.get_config_dir", lambda: config_dir)
+        monkeypatch.setattr("librarian.config.get_config_path", lambda: config_path)
+        monkeypatch.setattr("librarian.config.get_default_data_dir", lambda: data_dir)
+        return config_path
+
+    def test_loads_icon_style(self, tmp_path, monkeypatch):
+        self._write_config(
+            tmp_path, monkeypatch, '[obsidian]\nicon_style = "emoji"\n'
+        )
+        assert Config.load().obsidian.icon_style == "emoji"
+
+    def test_missing_section_uses_default(self, tmp_path, monkeypatch):
+        self._write_config(tmp_path, monkeypatch, 'editor = "code"\n')
+        assert Config.load().obsidian.icon_style == "nerd"
+
+    def test_round_trip(self, tmp_path, monkeypatch):
+        config_path = self._write_config(tmp_path, monkeypatch, "")
+        config = Config(obsidian=ObsidianConfig(icon_style="emoji"))
+        config.save()
+        assert 'icon_style = "emoji"' in config_path.read_text()
+        assert Config.load().obsidian.icon_style == "emoji"

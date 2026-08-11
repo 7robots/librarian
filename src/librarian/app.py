@@ -110,6 +110,7 @@ class LibrarianApp(
         with Horizontal(id="main-container"):
             yield TagList(
                 scan_directory=self.config.scan_directory,
+                icon_style=self.config.obsidian.icon_style,
                 id="tag-list",
                 classes="panel",
             )

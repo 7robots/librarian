@@ -3,11 +3,16 @@
 from pathlib import Path
 from typing import Iterable
 
+from rich.style import Style
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.message import Message
 from textual.widgets import DirectoryTree, Label, ListItem, ListView, Static
+from textual.widgets._directory_tree import DirEntry
+from textual.widgets._tree import TOGGLE_STYLE, TreeNode
 
+from ..obsidian import DEFAULT_ICON_STYLE, NotebookNavigatorAppearance
 from .calendar_list import CalendarList
 
 # Maximum tags to display before showing "Show more" item
@@ -15,7 +20,32 @@ MAX_DISPLAY_TAGS = 200
 
 
 class MarkdownDirectoryTree(DirectoryTree):
-    """A DirectoryTree that only shows directories and markdown files."""
+    """A DirectoryTree that only shows directories and markdown files.
+
+    When the scan directory sits inside an Obsidian vault using the Notebook
+    Navigator plugin, folder icons and colors are mirrored from that plugin's
+    settings so the panel matches the vault's appearance in Obsidian.
+    """
+
+    def __init__(
+        self,
+        path: str | Path,
+        appearance: NotebookNavigatorAppearance | None = None,
+        **kwargs,
+    ) -> None:
+        super().__init__(path, **kwargs)
+        self._appearance = appearance
+
+    @property
+    def appearance(self) -> NotebookNavigatorAppearance | None:
+        """The Notebook Navigator settings being mirrored, if any."""
+        return self._appearance
+
+    @appearance.setter
+    def appearance(self, appearance: NotebookNavigatorAppearance | None) -> None:
+        self._appearance = appearance
+        if self.is_mounted:
+            self._invalidate()
 
     def filter_paths(self, paths: Iterable[Path]) -> Iterable[Path]:
         """Filter to only show directories and markdown files."""
@@ -28,6 +58,46 @@ class MarkdownDirectoryTree(DirectoryTree):
             # Only show supported files
             elif path.suffix.lower() in (".md", ".taskpaper"):
                 yield path
+
+    def render_label(
+        self, node: TreeNode[DirEntry], base_style: Style, style: Style
+    ) -> Text:
+        """Render a node label, applying Notebook Navigator icons and colors.
+
+        The folder's icon takes the place of the tree's own expand/collapse
+        glyph rather than sitting beside it, so each row shows one icon. The
+        icon keeps ``TOGGLE_STYLE``, which is what makes a click on it expand or
+        collapse the folder.
+        """
+        label = super().render_label(node, base_style, style)
+
+        if self._appearance is None or node.data is None or not self.is_mounted:
+            return label
+
+        if not node.allow_expand:
+            # Notebook Navigator only styles folders, so leave files alone.
+            return label
+
+        path = node.data.path
+        icon = self._appearance.icon_for(path) or self._appearance.default_folder_icon(
+            node.is_expanded
+        )
+        color = self._appearance.color_for(path)
+
+        # Drop super()'s toggle glyph and keep the name, which already carries
+        # the tree's component styles.
+        prefix_length = len(
+            self.ICON_NODE_EXPANDED if node.is_expanded else self.ICON_NODE
+        )
+        name = label[prefix_length:]
+
+        icon_style = base_style + TOGGLE_STYLE
+        if color:
+            icon_style += Style(color=color)
+            if not self._appearance.color_icon_only:
+                name.stylize(Style(color=color))
+
+        return Text.assemble((icon, icon_style), name)
 
 
 class TagItem(ListItem):
@@ -194,10 +264,19 @@ class TagList(Vertical):
 
         pass
 
-    def __init__(self, scan_directory: Path | None = None, **kwargs) -> None:
+    def __init__(
+        self,
+        scan_directory: Path | None = None,
+        icon_style: str = DEFAULT_ICON_STYLE,
+        **kwargs,
+    ) -> None:
         super().__init__(**kwargs)
         self._all_tags: list[tuple[str, int]] = []
         self._scan_directory = scan_directory or Path.home()
+        self._icon_style = icon_style
+        self._appearance = NotebookNavigatorAppearance.load(
+            self._scan_directory, icon_style
+        )
         self.active_tool: str = "tags"
         self._tags_show_all: bool = False
 
@@ -218,7 +297,11 @@ class TagList(Vertical):
                 yield ListView(id="all-tags-list-view")
             with Vertical(id="folders-section", classes="content-section hidden"):
                 yield Static("FOLDERS", classes="tag-header", id="folders-header")
-                yield MarkdownDirectoryTree(str(self._scan_directory), id="directory-tree")
+                yield MarkdownDirectoryTree(
+                    str(self._scan_directory),
+                    appearance=self._appearance,
+                    id="directory-tree",
+                )
             with Vertical(id="calendar-section", classes="content-section hidden"):
                 yield CalendarList(id="calendar-list")
             yield Static(
@@ -242,8 +325,10 @@ class TagList(Vertical):
     def set_scan_directory(self, path: Path) -> None:
         """Set the root directory for the directory browser."""
         self._scan_directory = path
+        self._appearance = NotebookNavigatorAppearance.load(path, self._icon_style)
         try:
             tree = self.directory_tree
+            tree.appearance = self._appearance
             tree.path = path
         except Exception:
             pass  # Tree not yet mounted
