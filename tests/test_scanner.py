@@ -8,6 +8,7 @@ from librarian.scanner import (
     TAG_PATTERN,
     extract_tags,
     find_scannable_files,
+    list_folder_files,
     rescan_file,
     scan_directory,
     scan_file,
@@ -111,6 +112,49 @@ class TestFindScannableFiles:
         (tmp_path / "file.py").write_text("content")
         files = find_scannable_files(tmp_path)
         assert files == []
+
+
+class TestListFolderFiles:
+    def test_lists_direct_children_only(self, sample_files):
+        names = [f.name for f in list_folder_files(sample_files)]
+        assert "note1.md" in names
+        assert "tasks.taskpaper" in names
+        # deep.md lives in a subdirectory and must not appear
+        assert "deep.md" not in names
+
+    def test_includes_untagged_files(self, sample_files):
+        # The index only holds tagged files; a folder listing must not.
+        names = [f.name for f in list_folder_files(sample_files)]
+        assert "note3.md" in names
+
+    def test_sorted_case_insensitively(self, tmp_path):
+        for name in ("zebra.md", "Apple.md", "mango.md"):
+            (tmp_path / name).write_text("x")
+        names = [f.name for f in list_folder_files(tmp_path)]
+        assert names == ["Apple.md", "mango.md", "zebra.md"]
+
+    def test_ignores_unsupported_extensions(self, tmp_path):
+        (tmp_path / "keep.md").write_text("x")
+        (tmp_path / "skip.txt").write_text("x")
+        (tmp_path / "skip.pdf").write_text("x")
+        assert [f.name for f in list_folder_files(tmp_path)] == ["keep.md"]
+
+    def test_excludes_directories(self, tmp_path):
+        (tmp_path / "sub.md").mkdir()  # a directory that looks like a file
+        assert list_folder_files(tmp_path) == []
+
+    def test_missing_directory(self, tmp_path):
+        assert list_folder_files(tmp_path / "nonexistent") == []
+
+    def test_path_is_a_file(self, tmp_path):
+        target = tmp_path / "note.md"
+        target.write_text("x")
+        assert list_folder_files(target) == []
+
+    def test_empty_directory(self, tmp_path):
+        empty = tmp_path / "empty"
+        empty.mkdir()
+        assert list_folder_files(empty) == []
 
 
 class TestScanDirectory:

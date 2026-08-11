@@ -18,7 +18,8 @@ class NavigationActionsMixin:
         tag_list = self.query_one("#tag-list", TagList)
         if widget_id == "tools-list-view":
             return tag_list.tools_list_view
-        elif widget_id == "all-tags-list-view":
+        elif widget_id == "content-panel":
+            # Whichever view the active tool has in the content panel.
             if tag_list.active_tool == "folders":
                 return tag_list.directory_tree
             elif tag_list.active_tool == "calendar":
@@ -41,12 +42,12 @@ class NavigationActionsMixin:
         preview = self.query_one("#preview", Preview)
 
         focus_map = {
-            id(tag_list.tools_list_view): 0,
+            id(tag_list.all_tags_list_view): 0,
+            id(tag_list.directory_tree): 0,
+            id(tag_list.calendar_list.list_view): 0,
             id(file_list.list_view): 1,
             id(preview.scroll_view): 2,
-            id(tag_list.all_tags_list_view): 3,
-            id(tag_list.directory_tree): 3,
-            id(tag_list.calendar_list.list_view): 3,
+            id(tag_list.tools_list_view): 3,
         }
         return focus_map.get(id(focused), -1)
 
@@ -145,9 +146,16 @@ class NavigationActionsMixin:
     def on_file_list_search_mode_exited(
         self, event: FileList.SearchModeExited
     ) -> None:
-        """Handle search mode exit - restore focus to tools list."""
-        tag_list = self.query_one("#tag-list", TagList)
-        tag_list.tools_list_view.focus()
+        """Handle search mode exit - restore the previous listing and focus.
+
+        Leaving search clears the Files panel, so repopulate it for whichever
+        tool is active instead of leaving the user looking at an empty list.
+        """
+        self._refresh_file_panel()
+
+        widget = self._get_focus_widget("content-panel")
+        if widget:
+            widget.focus()
 
     def action_help(self) -> None:
         """Show help information."""

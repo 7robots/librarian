@@ -115,6 +115,7 @@ class FileList(Vertical):
         self._files: list[Path] = []
         self._all_files: list[Path] = []  # Full list before truncation
         self._current_tag: str | None = None
+        self._current_folder: str | None = None
         self._navigation_target: str | None = None
         self._search_mode: bool = False
         self._match_info: dict[Path, str] = {}
@@ -134,6 +135,7 @@ class FileList(Vertical):
         files: list[Path],
         tag: str | None = None,
         navigation_target: str | None = None,
+        folder: str | None = None,
     ) -> None:
         """Update the list of files.
 
@@ -141,9 +143,11 @@ class FileList(Vertical):
             files: List of file paths to display
             tag: Current tag filter (used for header display)
             navigation_target: Wiki link target being navigated to (navigation mode)
+            folder: Current folder name (used for header display in folder view)
         """
         self._all_files = files
         self._current_tag = tag
+        self._current_folder = folder
         self._navigation_target = navigation_target
         self._match_info = {}
         self._search_mode = False
@@ -158,12 +162,7 @@ class FileList(Vertical):
 
         # Update header
         header = self.query_one("#file-header", Static)
-        if navigation_target:
-            header.update(f"FILES (-> {navigation_target})")
-        elif tag:
-            header.update(f"FILES (#{tag})")
-        else:
-            header.update("FILES")
+        header.update(self.get_header_text())
 
         # Apply display cap for large collections
         if len(files) > MAX_DISPLAY_FILES:
@@ -240,6 +239,8 @@ class FileList(Vertical):
             return f"FILES (-> {self._navigation_target})"
         elif self._current_tag:
             return f"FILES (#{self._current_tag})"
+        elif self._current_folder:
+            return f"FILES ({self._current_folder}/)"
         else:
             return "FILES"
 
@@ -260,6 +261,7 @@ class FileList(Vertical):
         """
         self._files = files
         self._current_tag = tag
+        self._current_folder = None
         self._navigation_target = None
         self._match_info = {}
         list_view = self.list_view

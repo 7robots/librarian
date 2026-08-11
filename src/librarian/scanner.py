@@ -55,6 +55,30 @@ def scan_file(path: Path, config: Config) -> list[str]:
 SUPPORTED_EXTENSIONS = {".md", ".taskpaper"}
 
 
+def list_folder_files(directory: Path) -> list[Path]:
+    """List supported files directly inside a directory, sorted by name.
+
+    Only immediate children -- descendants are not included, matching Notebook
+    Navigator's own ``includeDescendantNotes = false`` default.
+
+    This reads the filesystem rather than the index on purpose: the index holds
+    only files carrying at least one hashtag, so a folder-organized vault would
+    look almost empty if listed from there.
+    """
+    if not directory.is_dir():
+        return []
+
+    files = []
+    try:
+        for path in directory.iterdir():
+            if path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS:
+                files.append(path)
+    except PermissionError:
+        return []
+
+    return sorted(files, key=lambda p: p.name.lower())
+
+
 def find_scannable_files(directory: Path) -> list[Path]:
     """Recursively find all supported files (.md, .taskpaper) in a directory."""
     if not directory.exists():

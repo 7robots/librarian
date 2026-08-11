@@ -20,7 +20,7 @@ from .database import (
     init_database,
 )
 from .navigation import NavigationStack
-from .scanner import scan_directory
+from .scanner import list_folder_files, scan_directory
 from .watcher import FileWatcher
 from .widgets import Banner, CalendarList, FileList, Preview, TagList, load_file_content
 from .widgets.tag_list import TagItem
@@ -90,12 +90,13 @@ class LibrarianApp(
         Binding("escape", "go_back", "Back", show=False),
     ]
 
-    # Custom focus order: tools -> files -> preview -> all tags (clockwise)
+    # Custom focus order, clockwise from the top-left panel:
+    # content (folders/tags/calendar) -> files -> preview -> tools
     FOCUS_ORDER = [
-        "tools-list-view",
+        "content-panel",
         "file-list-view",
         "preview",
-        "all-tags-list-view",
+        "tools-list-view",
     ]
 
     def __init__(self, config: Config) -> None:
@@ -127,7 +128,7 @@ class LibrarianApp(
         self._refresh_tags()
 
         tag_list = self.query_one("#tag-list", TagList)
-        tag_list.tools_list_view.focus()
+        tag_list.initialize_default_tool()
 
         self._watcher = FileWatcher(self.config, self._on_file_change)
         self._watcher.start()
@@ -160,14 +161,7 @@ class LibrarianApp(
                 else:
                     self.notify(f"Index updated: {added} added, {updated} updated, {removed} removed")
                 self._refresh_tags()
-
-                tag_list = self.query_one("#tag-list", TagList)
-                selected_tag = tag_list.get_selected_tag()
-                if selected_tag:
-                    files = get_files_by_tag(selected_tag)
-                    file_paths = [f[0] for f in files]
-                    file_list = self.query_one("#file-list", FileList)
-                    file_list.update_files(file_paths, selected_tag)
+                self._refresh_file_panel()
 
         elif worker_name == "_export_file":
             result = event.worker.result
@@ -225,16 +219,32 @@ class LibrarianApp(
     def _handle_file_change(self) -> None:
         """Handle file changes on the main thread."""
         self._refresh_tags()
+        self._refresh_file_panel()
+        self.notify("Index updated")
 
+    def _refresh_file_panel(self) -> None:
+        """Repopulate the Files panel for whichever tool is active.
+
+        Folder listings come from the filesystem and tag listings from the
+        index, so an index update must not overwrite a folder view with the
+        highlighted tag's files.
+        """
         tag_list = self.query_one("#tag-list", TagList)
+        file_list = self.query_one("#file-list", FileList)
+
+        if file_list.is_search_mode() or file_list.is_navigation_mode():
+            return
+
+        if tag_list.active_tool == "folders":
+            folder = tag_list.get_selected_folder()
+            if folder is not None:
+                self.call_later(self._show_folder_files, folder)
+            return
+
         selected_tag = tag_list.get_selected_tag()
         if selected_tag:
             files = get_files_by_tag(selected_tag)
-            file_paths = [f[0] for f in files]
-            file_list = self.query_one("#file-list", FileList)
-            file_list.update_files(file_paths, selected_tag)
-
-        self.notify("Index updated")
+            file_list.update_files([f[0] for f in files], selected_tag)
 
     async def on_tag_list_tag_selected(self, event: TagList.TagSelected) -> None:
         """Handle tag selection."""
@@ -320,8 +330,33 @@ class LibrarianApp(
         """Handle tool launches from the Tools menu."""
         if event.tool_name == "taskpaper":
             self._select_taskpaper_tag()
-        elif event.tool_name == "agents":
-            self.notify("Agents \u2014 coming soon")
+
+    async def on_tag_list_folder_highlighted(
+        self, event: TagList.FolderHighlighted
+    ) -> None:
+        """Show the highlighted folder's files in the Files panel."""
+        self._nav_stack.clear()
+        await self._show_folder_files(event.folder_path)
+
+    async def _show_folder_files(self, folder: Path) -> None:
+        """List a folder's files, labelling the panel with the folder name."""
+        files = list_folder_files(folder)
+
+        # Nested folders show their path relative to the scan directory; the
+        # scan directory itself has no relative path, so use its own name.
+        try:
+            label = str(folder.relative_to(self.config.scan_directory))
+        except ValueError:
+            label = folder.name
+        if label == ".":
+            label = folder.name
+
+        file_list = self.query_one("#file-list", FileList)
+        file_list.update_files(files, folder=label)
+
+        if not files:
+            preview = self.query_one("#preview", Preview)
+            await preview.show_file(None)
 
     async def on_tag_list_file_selected(self, event: TagList.FileSelected) -> None:
         """Handle file selection from directory browser."""
