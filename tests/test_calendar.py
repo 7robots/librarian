@@ -199,7 +199,7 @@ class TestMeetingPreview:
     def app(self, tmp_path, tmp_index):
         from librarian.app import LibrarianApp
         from librarian.calendar_store import init_store
-        from librarian.config import CalendarConfig, Config, TagConfig
+        from librarian.config import CalendarConfig, Config, TagConfig, ToolsConfig
 
         root = tmp_path / "notes"
         root.mkdir()
@@ -211,7 +211,8 @@ class TestMeetingPreview:
                 tags=TagConfig(),
                 export_directory=tmp_path / "exports",
                 data_directory=tmp_path / "data",
-                calendar=CalendarConfig(enabled=True),
+                calendar=CalendarConfig(),
+                tools=ToolsConfig(calendar=True),
             )
         )
 

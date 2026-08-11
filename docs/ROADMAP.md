@@ -5,14 +5,6 @@ rather than scattering it across READMEs or issue comments.
 
 ## Planned
 
-### Decide whether to remove TaskPaper
-A Reminders tool now exists (Tools → Reminders suspends Librarian and runs remtui), so the
-*adding* half of the original TaskPaper→remtui item is done. Whether to *remove* TaskPaper is
-still open, and it is a bigger job than it looks: TaskPaper runs through 9 modules, including
-`taskpaper.py` (taskpaper→markdown for preview and export) and `.taskpaper` handling in the
-scanner, watcher, database, preview, and export, plus the `taskpaper` config key and the `t`
-binding. Nothing forces the decision — the two tools coexist fine.
-
 ### Embed remtui as a panel instead of suspending
 Optional follow-up if the full-screen handoff grates. Requires, in order:
 

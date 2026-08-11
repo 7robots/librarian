@@ -23,9 +23,11 @@ class CalendarActionsMixin:
 
     def _fetch_calendar_events(self) -> None:
         """Fetch calendar events in a background worker."""
-        if not self.config.calendar.enabled:
+        if not self.config.tools.calendar:
             tag_list = self.query_one("#tag-list", TagList)
-            tag_list.calendar_list.show_error("Calendar disabled in config")
+            tag_list.calendar_list.show_error(
+                "Calendar is off. Set calendar = true under [tools] to enable it."
+            )
             return
 
         icalpal_bin = find_icalpal(self.config.calendar.icalpal_path)

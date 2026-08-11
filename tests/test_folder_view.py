@@ -12,7 +12,7 @@ from librarian.config import (
 )
 from librarian.database import add_file, batch_writes
 from librarian.widgets import FileList, TagList
-from librarian.widgets.tag_list import TOOLS, ToolItem
+from librarian.widgets.tag_list import ALL_TOOLS, DEFAULT_TOOLS, ToolItem
 
 
 @pytest.fixture
@@ -41,7 +41,7 @@ def config(vault, tmp_path):
         tags=TagConfig(),
         export_directory=tmp_path / "exports",
         data_directory=tmp_path / "data",
-        calendar=CalendarConfig(enabled=False),
+        calendar=CalendarConfig(),
         icons=IconConfig(style="nerd"),
         folders=FoldersConfig(),
         obsidian=ObsidianConfig(),
@@ -150,7 +150,7 @@ class TestPanelOrder:
 
 class TestAgentsRemoved:
     def test_not_in_tools_constant(self):
-        assert "Agents" not in TOOLS
+        assert "Agents" not in ALL_TOOLS
 
     async def test_not_in_tools_menu(self, app):
         async with app.run_test(size=(100, 30)) as pilot:
@@ -162,7 +162,7 @@ class TestAgentsRemoved:
                 if isinstance(item, ToolItem)
             ]
 
-            assert names == list(TOOLS)
+            assert names == list(DEFAULT_TOOLS)
             assert "Agents" not in names
 
     async def test_placeholder_section_is_gone(self, app):

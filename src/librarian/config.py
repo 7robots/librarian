@@ -56,6 +56,29 @@ class TagConfig:
 
 
 @dataclass
+class ToolsConfig:
+    """Which optional tools appear in the Tools menu.
+
+    Every optional tool depends on a third-party program Librarian does not
+    bundle -- taskpapertui, remtui, icalPal -- so all are off by default and
+    turned on deliberately. Hiding a tool only removes its UI entry points; the
+    code stays in place, so `.taskpaper` files keep being indexed, previewed,
+    exported, and edited either way.
+    """
+
+    taskpaper: bool = False
+    reminders: bool = False
+    calendar: bool = False
+
+    def is_enabled(self, tool_name: str) -> bool:
+        """Whether a tool should be shown.
+
+        Tools with no field here are not optional and are always enabled.
+        """
+        return bool(getattr(self, tool_name.lower(), True))
+
+
+@dataclass
 class IconConfig:
     """How folder icon names are rendered as terminal glyphs."""
 
@@ -83,9 +106,8 @@ class ObsidianConfig:
 
 @dataclass
 class CalendarConfig:
-    """Calendar integration configuration."""
+    """Calendar integration settings. Whether the tool shows is `[tools] calendar`."""
 
-    enabled: bool = True
     calendar_name: str = ""  # empty = all calendars
     icalpal_path: str = ""   # empty = auto-detect
 
@@ -102,6 +124,7 @@ class Config:
     export_directory: Path = field(default_factory=lambda: Path.home() / "Downloads")
     data_directory: Path = field(default_factory=get_default_data_dir)
     calendar: CalendarConfig = field(default_factory=CalendarConfig)
+    tools: ToolsConfig = field(default_factory=ToolsConfig)
     icons: IconConfig = field(default_factory=IconConfig)
     folders: FoldersConfig = field(default_factory=FoldersConfig)
     obsidian: ObsidianConfig = field(default_factory=ObsidianConfig)
@@ -161,9 +184,20 @@ class Config:
         # Parse calendar config
         cal_data = data.get("calendar", {})
         calendar = CalendarConfig(
-            enabled=cal_data.get("enabled", True),
             calendar_name=cal_data.get("calendar_name", ""),
             icalpal_path=cal_data.get("icalpal_path", ""),
+        )
+
+        # Parse tools menu config. The calendar switch used to live at
+        # [calendar] enabled, which is still honored so older configs keep
+        # working.
+        tools_data = data.get("tools", {})
+        tools = ToolsConfig(
+            taskpaper=bool(tools_data.get("taskpaper", False)),
+            reminders=bool(tools_data.get("reminders", False)),
+            calendar=bool(
+                tools_data.get("calendar", cal_data.get("enabled", False))
+            ),
         )
 
         # Parse icon rendering config
@@ -192,6 +226,7 @@ class Config:
             export_directory=export_directory,
             data_directory=data_directory,
             calendar=calendar,
+            tools=tools,
             icons=icons,
             folders=folders,
             obsidian=obsidian,
@@ -244,6 +279,14 @@ class Config:
 
         lines.extend([
             '',
+            '# Optional tools shown in the Tools menu. Each needs a third-party',
+            '# program (taskpapertui, remtui, icalPal), so all are opt-in.',
+            '# Hiding one only hides its UI: .taskpaper files stay indexed.',
+            '[tools]',
+            f'taskpaper = {str(self.tools.taskpaper).lower()}',
+            f'reminders = {str(self.tools.reminders).lower()}',
+            f'calendar = {str(self.tools.calendar).lower()}',
+            '',
             '# Folder icon glyphs: "auto" detects Nerd Font support, or force',
             '# "nerd" (tinted with the folder color) or "emoji" (works anywhere)',
             '[icons]',
@@ -276,9 +319,8 @@ class Config:
             '[obsidian]',
             f'enabled = {str(self.obsidian.enabled).lower()}',
             '',
-            '# Calendar integration (requires icalPal)',
+            '# Calendar settings (the tool itself is enabled under [tools])',
             '[calendar]',
-            f'enabled = {str(self.calendar.enabled).lower()}',
             f'calendar_name = "{self.calendar.calendar_name}"  # empty = all calendars',
             f'icalpal_path = "{self.calendar.icalpal_path}"  # empty = auto-detect',
         ])

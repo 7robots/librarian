@@ -29,7 +29,7 @@ from .navigation import NavigationStack
 from .scanner import list_folder_files, scan_directory
 from .watcher import FileWatcher
 from .widgets import Banner, CalendarList, FileList, Preview, TagList, load_file_content
-from .widgets.tag_list import TagItem
+from .widgets.tag_list import ALL_TOOLS, TagItem
 
 
 class LibrarianApp(
@@ -114,12 +114,19 @@ class LibrarianApp(
         self._preview_timer: Timer | None = None
         self._pending_preview_path: Path | None = None
 
+    def visible_tools(self) -> tuple[str, ...]:
+        """Tools to show in the menu, dropping those disabled in config."""
+        return tuple(
+            name for name in ALL_TOOLS if self.config.tools.is_enabled(name)
+        )
+
     def compose(self) -> ComposeResult:
         yield Banner()
         with Horizontal(id="main-container"):
             yield TagList(
                 scan_directory=self.config.scan_directory,
                 appearance=build_folder_appearance(self.config),
+                tools=self.visible_tools(),
                 id="tag-list",
                 classes="panel",
             )
@@ -342,6 +349,13 @@ class LibrarianApp(
 
     def action_launch_taskpaper(self) -> None:
         """Select the #taskpaper tag via the `t` keybinding."""
+        if not self.config.tools.taskpaper:
+            # The tool is hidden, so the shortcut should not be a hidden way in.
+            self.notify(
+                "TaskPaper is off. Set taskpaper = true under [tools] to enable it.",
+                severity="warning",
+            )
+            return
         self._select_taskpaper_tag()
 
     def on_tag_list_tool_launched(self, event: TagList.ToolLaunched) -> None:

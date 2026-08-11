@@ -40,8 +40,8 @@ class TestConfigDefaults:
 
     def test_default_calendar_config(self):
         config = Config()
-        assert config.calendar.enabled is True
         assert config.calendar.calendar_name == ""
+        assert config.calendar.icalpal_path == ""
 
 
 class TestConfigSaveLoad:
@@ -71,7 +71,7 @@ class TestConfigSaveLoad:
             tags=TagConfig(mode="whitelist", whitelist=["python", "rust"]),
             export_directory=tmp_path / "exports",
             data_directory=tmp_path / "data",
-            calendar=CalendarConfig(enabled=False, calendar_name="Work"),
+            calendar=CalendarConfig(calendar_name="Work"),
         )
         (tmp_path / "data").mkdir(parents=True, exist_ok=True)
         original.save()
@@ -83,7 +83,6 @@ class TestConfigSaveLoad:
         assert loaded.tags.mode == original.tags.mode
         assert loaded.tags.whitelist == original.tags.whitelist
         assert loaded.export_directory == original.export_directory
-        assert loaded.calendar.enabled == original.calendar.enabled
         assert loaded.calendar.calendar_name == original.calendar.calendar_name
 
     def test_load_creates_defaults_when_missing(self, tmp_path, monkeypatch):
@@ -116,7 +115,7 @@ class TestConfigSaveLoad:
         assert config.editor == "code"
         # Defaults for missing fields
         assert config.tags.mode == "all"
-        assert config.calendar.enabled is True
+        assert config.tools.calendar is False
 
 
 class TestTagConfig:
@@ -134,7 +133,6 @@ class TestTagConfig:
 class TestCalendarConfig:
     def test_default(self):
         cc = CalendarConfig()
-        assert cc.enabled is True
         assert cc.calendar_name == ""
         assert cc.icalpal_path == ""
 
@@ -192,6 +190,50 @@ class TestAppearanceConfig:
             '[folders.icons]\n"a" = "book"\n"b" = 3\n"c" = ""\n',
         )
         assert Config.load().folders.icons == {"a": "book"}
+
+    def test_tools_are_all_off_by_default(self, tmp_path, monkeypatch):
+        self._write_config(tmp_path, monkeypatch, 'editor = "code"\n')
+        tools = Config.load().tools
+
+        assert (tools.taskpaper, tools.reminders, tools.calendar) == (
+            False,
+            False,
+            False,
+        )
+
+    def test_tools_can_be_enabled(self, tmp_path, monkeypatch):
+        self._write_config(
+            tmp_path,
+            monkeypatch,
+            "[tools]\ntaskpaper = true\nreminders = true\ncalendar = true\n",
+        )
+        tools = Config.load().tools
+
+        assert (tools.taskpaper, tools.reminders, tools.calendar) == (True, True, True)
+
+    def test_legacy_calendar_enabled_still_turns_the_tool_on(
+        self, tmp_path, monkeypatch
+    ):
+        """The switch used to live at [calendar] enabled."""
+        self._write_config(
+            tmp_path, monkeypatch, '[calendar]\nenabled = true\ncalendar_name = "Work"\n'
+        )
+        config = Config.load()
+
+        assert config.tools.calendar is True
+        assert config.calendar.calendar_name == "Work"
+
+    def test_tools_section_wins_over_the_legacy_key(self, tmp_path, monkeypatch):
+        self._write_config(
+            tmp_path,
+            monkeypatch,
+            "[tools]\ncalendar = false\n\n[calendar]\nenabled = true\n",
+        )
+        assert Config.load().tools.calendar is False
+
+    def test_legacy_calendar_disabled_is_honored(self, tmp_path, monkeypatch):
+        self._write_config(tmp_path, monkeypatch, "[calendar]\nenabled = false\n")
+        assert Config.load().tools.calendar is False
 
     def test_obsidian_can_be_disabled(self, tmp_path, monkeypatch):
         self._write_config(tmp_path, monkeypatch, "[obsidian]\nenabled = false\n")

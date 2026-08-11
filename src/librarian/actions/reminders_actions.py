@@ -43,6 +43,14 @@ class RemindersActionsMixin:
 
     def action_launch_reminders(self) -> None:
         """Suspend Librarian and hand the terminal to remtui."""
+        if not self.config.tools.reminders:
+            # Hidden from the menu, so it should not be reachable another way.
+            self.notify(
+                "Reminders is off. Set reminders = true under [tools] to enable it.",
+                severity="warning",
+            )
+            return
+
         command = resolve_reminders_command(self.config.reminders)
         if command is None:
             configured = self.config.reminders.strip() or DEFAULT_REMINDERS_COMMAND

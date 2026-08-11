@@ -39,7 +39,8 @@ src/librarian/
 - **Index storage**: JSON at configurable `data_directory` (default: `~/.local/share/librarian/`). Atomic writes for iCloud compatibility.
 - **Tag format**: Inline hashtags matching `#[a-zA-Z][a-zA-Z0-9_-]*`
 - **Auto-refresh**: watchdog monitors scan directory with debouncing
-- **Folder-first sidebar**: Content panel (Folders/Tags/Calendar) on top, Tools menu (Tags, Folders, TaskPaper, Reminders, Calendar) below. Opens on Folders — see `DEFAULT_TOOL` in `widgets/tag_list.py`
+- **Folder-first sidebar**: Content panel (Folders/Tags/Calendar) on top, Tools menu below. Opens on Folders — see `DEFAULT_TOOL` in `widgets/tag_list.py`
+- **Optional tools**: every tool needing a third-party program (TaskPaper, Reminders, Calendar) is opt-in via `[tools]`. Hiding a tool withholds its UI entry points only — the code stays live, so `.taskpaper` files keep being indexed, previewed, exported, and edited
 - **Launcher tools**: TaskPaper and Reminders hand off to an external program rather than switching the content panel — see `LAUNCHER_TOOLS` in `widgets/tag_list.py`
 - **Wiki links**: `[[note.md]]` or `[[note|display text]]` syntax, preprocessed to `wikilink:` scheme
 - **Export**: HTML export with configurable output directory (sanitized output)
@@ -66,7 +67,7 @@ Denormalized structure with tags inline per file. Only files containing at least
 The app has four panels:
 - **Left sidebar** (25% width): switchable content panel (50% height) on top, Tools menu (50% height) below
   - Content panel switches between: Folders (DirectoryTree), All Tags (ListView), Calendar (CalendarList)
-  - Tools menu: Tags, Folders, TaskPaper, Reminders, Calendar
+  - Tools menu: Tags and Folders always; TaskPaper, Reminders, and Calendar when enabled in config
 - **Right top** (33% height): File list — the selected folder's files in folder view, the selected tag's files otherwise
 - **Right bottom** (67% height): Markdown preview
 
@@ -186,9 +187,9 @@ class TagConfig:
 
 @dataclass
 class CalendarConfig:
-    enabled: bool = True
     calendar_name: str = ""  # empty = all calendars
     icalpal_path: str = ""   # empty = auto-detect
+    # Whether the tool is shown lives in [tools] calendar
 
 @dataclass
 class IconConfig:
@@ -205,6 +206,14 @@ class ObsidianConfig:
 
 @dataclass
 class Config:
+@dataclass
+class ToolsConfig:
+    taskpaper: bool = False   # show the TaskPaper tool (needs taskpapertui)
+    reminders: bool = False   # show the Reminders tool (needs remtui)
+    calendar: bool = False    # show the Calendar tool (needs icalPal)
+
+@dataclass
+class Config:
     scan_directory: Path
     editor: str
     taskpaper: str          # Path to taskpapertui executable (empty = use editor)
@@ -213,6 +222,7 @@ class Config:
     export_directory: Path  # Default: ~/Downloads
     data_directory: Path    # Default: ~/.local/share/librarian
     calendar: CalendarConfig
+    tools: ToolsConfig
     icons: IconConfig
     folders: FoldersConfig
     obsidian: ObsidianConfig
@@ -311,8 +321,10 @@ Librarian integrates with macOS Calendar via icalPal to show today's meetings.
 
 ### Configuration
 ```toml
+[tools]
+calendar = true        # the tool is opt-in; icalPal is not bundled
+
 [calendar]
-enabled = true
 calendar_name = ""     # empty = all calendars
 icalpal_path = ""      # empty = auto-detect
 ```
@@ -467,6 +479,40 @@ never glyphs — turning names into glyphs is `icons.py`'s job.
   align in a column — needed because one tree can mix one-cell Nerd Font glyphs with two-cell emoji.
 - Files are left unstyled — folders only.
 - Setting `tree.appearance = None` restores the stock Textual tree.
+
+## Optional Tools
+
+Every tool that depends on a program Librarian does not bundle is opt-in:
+
+```toml
+[tools]
+taskpaper = false   # file-based tasks, via taskpapertui
+reminders = false   # Apple Reminders, via remtui
+calendar = false    # today's meetings, via icalPal
+```
+
+All default to false, so a fresh install shows only Tags and Folders and never advertises a tool
+whose backing program is missing. Which task tool to use — if any — is the user's choice.
+
+The calendar switch used to be `[calendar] enabled`. That key is still honored when `[tools] calendar`
+is absent, so older configs keep working; `[tools]` wins when both are present. `[calendar]` keeps its
+real settings (`calendar_name`, `icalpal_path`).
+
+`ToolsConfig.is_enabled(name)` answers by attribute lookup, so a tool with no field is treated as
+non-optional and always shown; `LibrarianApp.visible_tools()` filters `ALL_TOOLS` through it, and
+`TagList` renders the list it is handed rather than reading the catalog. Enabling a tool inserts it
+in catalog order rather than appending, which a test pins.
+
+Hiding a tool withholds **all** its UI entry points — the menu row, the `t` binding,
+`action_launch_reminders`, the calendar fetch, and the corresponding entries in the help text — on
+the principle that a shortcut into a hidden feature is worse than no shortcut. Each guard names its
+config key in the message it shows, so the switch stays discoverable.
+
+What hiding does *not* touch: `.taskpaper` files are still indexed by the scanner, converted for
+preview and export by `taskpaper.py`, and opened with the `taskpaper` editor by `e`. Note the
+`taskpaper` config key (a path to an editor) and `[tools] taskpaper` (a bool) are deliberately
+separate — one says which editor to use, the other whether the tool appears. They cannot be merged
+into a single `[taskpaper]` table, since TOML forbids a bare key and a table sharing a name.
 
 ## Reminders (remtui)
 

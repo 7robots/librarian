@@ -159,7 +159,10 @@ class NavigationActionsMixin:
 
     def action_help(self) -> None:
         """Show help information."""
-        self.notify(
-            "s=Search, n=New, e=Edit, d=Delete, x=Export, r=Rename, m=Move, t=TaskPaper, a=Associate, u=Update, q=Quit",
-            timeout=5,
-        )
+        keys = ["s=Search", "n=New", "e=Edit", "d=Delete", "x=Export", "r=Rename", "m=Move"]
+        if self.config.tools.taskpaper:
+            keys.append("t=TaskPaper")
+        if self.config.tools.calendar:
+            keys.append("a=Associate")
+        keys.extend(["u=Update", "q=Quit"])
+        self.notify(", ".join(keys), timeout=5)

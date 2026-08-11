@@ -18,8 +18,15 @@ from .calendar_list import CalendarList
 # Maximum tags to display before showing "Show more" item
 MAX_DISPLAY_TAGS = 200
 
-# Tools menu entries, in display order.
-TOOLS = ("Tags", "Folders", "TaskPaper", "Reminders", "Calendar")
+# Every tool Librarian knows about, in display order.
+ALL_TOOLS = ("Tags", "Folders", "TaskPaper", "Reminders", "Calendar")
+
+# Tools hidden unless enabled in config. The code behind them stays live; only
+# the menu entry is withheld.
+OPTIONAL_TOOLS = ("TaskPaper", "Reminders", "Calendar")
+
+# What the menu shows when nothing is configured.
+DEFAULT_TOOLS = tuple(name for name in ALL_TOOLS if name not in OPTIONAL_TOOLS)
 
 # Tools that launch an external program instead of switching the content panel.
 LAUNCHER_TOOLS = ("taskpaper", "reminders")
@@ -278,9 +285,11 @@ class TagList(Vertical):
         self,
         scan_directory: Path | None = None,
         appearance: FolderAppearance | None = None,
+        tools: tuple[str, ...] | None = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
+        self.tools = tuple(tools) if tools is not None else DEFAULT_TOOLS
         self._all_tags: list[tuple[str, int]] = []
         self._scan_directory = scan_directory or Path.home()
         self._appearance = appearance
@@ -316,7 +325,7 @@ class TagList(Vertical):
         with Vertical(id="tools-panel"):
             yield Static("\u2605 TOOLS", classes="tag-header", id="tools-header")
             yield ListView(
-                *(ToolItem(name) for name in TOOLS),
+                *(ToolItem(name) for name in self.tools),
                 id="tools-list-view",
             )
 
@@ -450,7 +459,7 @@ class TagList(Vertical):
         tree, by default -- since that is where browsing starts; the Tools menu
         is a mode switch reached with Tab.
         """
-        for i, name in enumerate(TOOLS):
+        for i, name in enumerate(self.tools):
             if name.lower() == self.active_tool:
                 self.tools_list_view.index = i
                 break

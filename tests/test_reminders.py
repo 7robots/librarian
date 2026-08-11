@@ -6,9 +6,9 @@ from librarian.actions.reminders_actions import (
     DEFAULT_REMINDERS_COMMAND,
     resolve_reminders_command,
 )
-from librarian.config import CalendarConfig, Config, TagConfig
+from librarian.config import CalendarConfig, Config, TagConfig, ToolsConfig
 from librarian.widgets import TagList
-from librarian.widgets.tag_list import LAUNCHER_TOOLS, TOOLS, ToolItem
+from librarian.widgets.tag_list import ALL_TOOLS, LAUNCHER_TOOLS, ToolItem
 
 
 class TestResolveCommand:
@@ -58,7 +58,7 @@ class TestResolveCommand:
 
 class TestToolsMenu:
     def test_reminders_is_a_tool(self):
-        assert "Reminders" in TOOLS
+        assert "Reminders" in ALL_TOOLS
 
     def test_reminders_is_a_launcher_not_a_panel(self):
         assert "reminders" in LAUNCHER_TOOLS
@@ -76,7 +76,8 @@ def config(tmp_path):
         tags=TagConfig(),
         export_directory=tmp_path / "exports",
         data_directory=tmp_path / "data",
-        calendar=CalendarConfig(enabled=False),
+        calendar=CalendarConfig(),
+        tools=ToolsConfig(reminders=True),
     )
 
 
@@ -210,3 +211,150 @@ class TestLaunching:
 
             assert tag_list.active_tool == before == "folders"
             assert not tag_list.query_one("#folders-section").has_class("hidden")
+
+
+class TestOptionalTools:
+    """Task tools are opt-in; their code stays live either way."""
+
+    async def menu_names(self, app, pilot):
+        await pilot.pause()
+        return [
+            item.tool_name
+            for item in app.query_one(TagList).tools_list_view.children
+            if isinstance(item, ToolItem)
+        ]
+
+    def app_with(self, config, **flags):
+        from librarian.app import LibrarianApp
+
+        config.tools = ToolsConfig(**flags)
+        return LibrarianApp(config)
+
+    async def test_all_optional_tools_hidden_by_default(self, config, tmp_index):
+        """Only the tools needing no third-party program are shown."""
+        app = self.app_with(config)
+        async with app.run_test(size=(100, 30)) as pilot:
+            assert await self.menu_names(app, pilot) == ["Tags", "Folders"]
+
+    async def test_only_calendar(self, config, tmp_index):
+        app = self.app_with(config, calendar=True)
+        async with app.run_test(size=(100, 30)) as pilot:
+            names = await self.menu_names(app, pilot)
+            assert names == ["Tags", "Folders", "Calendar"]
+
+    async def test_only_taskpaper(self, config, tmp_index):
+        app = self.app_with(config, taskpaper=True)
+        async with app.run_test(size=(100, 30)) as pilot:
+            names = await self.menu_names(app, pilot)
+            assert "TaskPaper" in names
+            assert "Reminders" not in names
+
+    async def test_only_reminders(self, config, tmp_index):
+        app = self.app_with(config, reminders=True)
+        async with app.run_test(size=(100, 30)) as pilot:
+            names = await self.menu_names(app, pilot)
+            assert "Reminders" in names
+            assert "TaskPaper" not in names
+
+    async def test_all_enabled(self, config, tmp_index):
+        app = self.app_with(config, taskpaper=True, reminders=True, calendar=True)
+        async with app.run_test(size=(100, 30)) as pilot:
+            assert await self.menu_names(app, pilot) == list(ALL_TOOLS)
+
+    async def test_menu_order_is_stable(self, config, tmp_index):
+        """Enabling a tool inserts it in catalog order, not at the end."""
+        app = self.app_with(config, taskpaper=True, reminders=True, calendar=True)
+        async with app.run_test(size=(100, 30)) as pilot:
+            names = await self.menu_names(app, pilot)
+            assert names.index("TaskPaper") < names.index("Reminders")
+            assert names.index("Reminders") < names.index("Calendar")
+
+
+class TestDisabledToolsAreUnreachable:
+    """A hidden tool must not stay reachable by shortcut or action."""
+
+    def app_with(self, config, **flags):
+        from librarian.app import LibrarianApp
+
+        config.tools = ToolsConfig(**flags)
+        return LibrarianApp(config)
+
+    async def test_taskpaper_action_is_inert(self, config, tmp_index):
+        app = self.app_with(config)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await pilot.pause()
+            app.action_launch_taskpaper()
+            await pilot.pause()
+
+            assert app.query_one(TagList).active_tool == "folders"
+            assert any("TaskPaper is off" in n.message for n in app._notifications)
+
+    async def test_reminders_action_is_inert(self, config, tmp_index, monkeypatch):
+        app = self.app_with(config)
+        calls = []
+        monkeypatch.setattr(
+            "librarian.actions.reminders_actions.subprocess.run",
+            lambda cmd, **kw: calls.append(cmd),
+        )
+
+        async with app.run_test(size=(100, 30)) as pilot:
+            await pilot.pause()
+            suspend = FakeSuspend()
+            monkeypatch.setattr(app, "suspend", suspend)
+
+            app.action_launch_reminders()
+            await pilot.pause()
+
+            assert calls == []
+            assert not suspend.entered
+            assert any("Reminders is off" in n.message for n in app._notifications)
+
+    async def test_taskpaper_action_works_when_enabled(self, config, tmp_index):
+        app = self.app_with(config, taskpaper=True)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await pilot.pause()
+            app.action_launch_taskpaper()
+            await pilot.pause()
+
+            # No #taskpaper tag in this index, so it warns rather than switching,
+            # but it must reach that code path rather than being gated out.
+            assert not any("TaskPaper is off" in n.message for n in app._notifications)
+
+    async def test_calendar_panel_explains_it_is_off(self, config, tmp_index):
+        """The panel is unreachable from the menu, but the fetch guard still holds."""
+        app = self.app_with(config)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await pilot.pause()
+            tag_list = app.query_one(TagList)
+
+            app._fetch_calendar_events()
+            await pilot.pause()
+
+            status = str(tag_list.calendar_list.status_label.render())
+            assert "Calendar is off" in status
+
+    async def test_help_omits_shortcuts_for_hidden_tools(self, config, tmp_index):
+        app = self.app_with(config)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await pilot.pause()
+            app.action_help()
+            await pilot.pause()
+
+            help_text = next(
+                n.message for n in app._notifications if "s=Search" in n.message
+            )
+            assert "t=TaskPaper" not in help_text
+            assert "a=Associate" not in help_text
+
+    async def test_taskpaper_files_still_supported(self, config, tmp_index):
+        """Hiding the tools must not stop .taskpaper files being indexed."""
+        from librarian.scanner import SUPPORTED_EXTENSIONS, list_folder_files
+
+        assert ".taskpaper" in SUPPORTED_EXTENSIONS
+
+        (config.scan_directory / "todo.taskpaper").write_text(
+            "Inbox:\n\t- x #taskpaper\n"
+        )
+        assert [p.name for p in list_folder_files(config.scan_directory)] == [
+            "todo.taskpaper"
+        ]

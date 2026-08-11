@@ -40,7 +40,7 @@ def make_config(root, tmp_path, **overrides):
         tags=TagConfig(),
         export_directory=tmp_path / "exports",
         data_directory=tmp_path / "data",
-        calendar=CalendarConfig(enabled=False),
+        calendar=CalendarConfig(),
         icons=IconConfig(style="nerd"),
         folders=FoldersConfig(),
         obsidian=ObsidianConfig(),
