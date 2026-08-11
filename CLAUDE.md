@@ -44,7 +44,7 @@ src/librarian/
 - **Launcher tools**: TaskPaper and Reminders hand off to an external program rather than switching the content panel — see `LAUNCHER_TOOLS` in `widgets/tag_list.py`
 - **Wiki links**: `[[note.md]]` or `[[note|display text]]` syntax, preprocessed to `wikilink:` scheme
 - **Export**: HTML export with configurable output directory (sanitized output)
-- **Banner**: Custom ASCII art header (`widgets/banner.py`) with per-letter colorization, replacing the default Textual Header
+- **Banner**: Compact 3-row header (`widgets/banner.py`) — a robot mark echoing the `md-robot` folder glyph, a letter-spaced title, and the tagline. `Text(no_wrap=True)` keeps a narrow terminal from making it taller
 - **Border styling**: Each panel has a distinct border color (`$accent`/cyan for tags, `$warning`/yellow for files, `$success`/green for preview) with `:focus-within` pseudo-class for active panel indication
 
 ## Index Schema
@@ -171,7 +171,7 @@ Key bindings:
 - Headers use fixed `height: 1`
 - TagList: content panel and Tools list each at `height: 1fr` (50/50)
 - Content panel sections toggled via CSS `hidden` class
-- Banner widget has fixed `height: 5` with `width: 100%`
+- Banner widget has fixed `height: 3` with `width: 100%`; `ROBOT_ROWS` must stay 3 rows of equal, single-cell width or the text column shifts between lines
 - Per-panel border colors with `:focus-within` for active indication:
   - `#tag-list`: `$accent` / `cyan` when focused
   - `#file-list`: `$warning` / `yellow` when focused
