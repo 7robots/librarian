@@ -14,7 +14,10 @@ dependencies = [
 librarian = "librarian.__main__:main"
 
 [dependency-groups]
-dev = ["pytest>=8.0.0"]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=1.4.0",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -22,6 +25,7 @@ build-backend = "hatchling.build"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/librarian"]
