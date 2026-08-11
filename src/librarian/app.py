@@ -141,7 +141,18 @@ class LibrarianApp(
         return scan_directory(self.config)
 
     def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
-        """Handle background worker completion."""
+        """Handle background worker completion.
+
+        Workers can finish while the app is shutting down, after the widgets
+        they report into have gone away.
+        """
+        try:
+            self._handle_worker_state(event)
+        except NoMatches:
+            return
+
+    def _handle_worker_state(self, event: Worker.StateChanged) -> None:
+        """Route a finished worker's result to the widgets that display it."""
         worker_name = event.worker.name
 
         if event.state.name == "ERROR":
