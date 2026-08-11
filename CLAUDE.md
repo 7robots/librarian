@@ -553,22 +553,34 @@ reminders = ""   # empty = find "remtui" on PATH
 on PATH) and runs it inside `with self.suspend():` — the same pattern `action_edit` uses for editors.
 A missing executable notifies rather than launching.
 
-### Why an external program rather than an embedded panel
-Textual has no supported way to run one `App` inside another; the App is the root. Embedding remtui
-would mean refactoring its `RemTuiApp` into a `Screen` that Librarian pushes, which additionally
-requires:
+### Embedded panel, with a handoff fallback
+`action_launch_reminders` prefers the embedded panel and falls back to the executable:
 
-- Upgrading Librarian to `textual>=8.2.8` (remtui's floor; Librarian is on 7.x). The folder tree
-  reaches into private Textual APIs (`_tree.TOGGLE_STYLE`, `_directory_tree.DirEntry`,
-  `_invalidate()`), which is exactly what breaks across a major version.
-- Scoping remtui's app-level theme and `CSS_PATH`, which would otherwise restyle Librarian.
+1. **Panel** — with remtui importable, `RemindersModal` (`widgets/reminders_modal.py`) mounts
+   remtui's `RemindersPanel` over the Files and Preview panels, leaving the banner, folder tree, and
+   Tools menu visible. Install with `uv sync --extra reminders`.
+2. **Handoff** — otherwise Librarian suspends and runs the `remtui` executable.
 
-Suspend-and-launch was chosen first because it always runs the real remtui, cannot drift out of sync
-with it, and needs no version coupling. Note that reminders live in Apple Reminders, not in files, so
-nothing in this path touches the index, file list, or preview.
+The fallback is not vestigial: remtui needs Python 3.12+ while Librarian supports 3.10, so on older
+interpreters the package cannot be installed even when the binary is on PATH. The optional
+dependency carries a `python_version >= '3.12'` marker for the same reason, and hatchling needs
+`allow-direct-references` because remtui is referenced by git URL.
 
-If the embedded version is ever built, remtui ships `fake_remctl.py` — a fake CLI used by its own
-tests — which Librarian could reuse to test the integration without touching real Reminders data.
+Three things make the embed work:
+
+- **remtui exposes a widget, not a Screen.** Textual cannot nest one `App` inside another, and a
+  `Screen` cannot be mounted inside a container. remtui's `RemindersPanel` is a plain widget with
+  scoped `DEFAULT_CSS`, so hosting it cannot restyle Librarian; its dialogs carry their own
+  `dialogs.tcss`.
+- **`q` needs a binding here.** The panel carries remtui's `q -> quit`, which resolves to nothing in
+  this context, so without `RemindersModal`'s own `q` the panel could not be closed by keyboard.
+- **`ModalScreen` isolates Librarian's keys.** Librarian binds single letters on the App, which would
+  otherwise stay live beneath another screen; being modal stops `s`, `u`, `x` and friends from firing
+  while the panel is open. `n` reaching remtui's add-reminder form rather than Librarian's new-note
+  action is the visible proof, and both are pinned by tests.
+
+Tests use remtui's `fake_remctl.py` backend, so they never read or write real Reminders. They skip
+when remtui is not installed (`pytest.importorskip`).
 
 ## Export to HTML
 

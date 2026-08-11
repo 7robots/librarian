@@ -5,23 +5,6 @@ rather than scattering it across READMEs or issue comments.
 
 ## Planned
 
-### Embed remtui as a panel instead of suspending
-Optional follow-up if the full-screen handoff grates. The Textual upgrade this used to require is
-done — all three projects are on `textual>=8.2.8` — so what remains is:
-
-1. Refactor remtui's `RemTuiApp` into a `Screen` in its own repo, with the App reduced to a shell
-   that pushes it — Textual cannot nest one App inside another.
-2. Host that screen from Librarian as a modal sized over the two right panels, scoping remtui's
-   app-level theme and `CSS_PATH` so they do not restyle Librarian.
-
-remtui's `fake_remctl.py` can back the tests, so this is verifiable without touching real
-Reminders data.
-
-Worth embedding remtui rather than TaskPaperTUI: reminders live in Apple Reminders, so an embedded
-screen is the *only* way they appear in Librarian, whereas `.taskpaper` files are already indexed,
-previewed, and exported here — embedding TaskPaperTUI would add a second view of a file Librarian
-already renders. TaskPaperTUI stays an editor handoff on `e`.
-
 ### De-duplicate the taskpaper → markdown conversion
 `librarian/taskpaper.py` and `taskpapertui/widgets/preview.py` hold the same conversion, differing
 only in an arrow character in a docstring. TaskPaperTUI is the natural owner now that it has tests

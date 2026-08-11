@@ -157,9 +157,19 @@ reminders = true
 reminders = ""   # or a path; empty finds "remtui" on PATH
 ```
 
-Select **Reminders** and Librarian suspends, handing the terminal to
-[remtui](https://github.com/7robots/remtui); quitting it returns you to your panels. Reminders live
-in Apple Reminders rather than in files, so nothing here touches your notes or the index.
+Select **Reminders** and the reminders list opens as a panel over the Files and Preview panels, with
+your folder tree and Tools menu still visible; `q` closes it. That needs remtui installed as a
+Python package:
+
+```bash
+uv sync --extra reminders
+```
+
+Without it, Librarian falls back to suspending and running the `remtui` executable, returning to your
+panels when you quit. (remtui needs Python 3.12+, so on 3.10 or 3.11 only the fallback is available.)
+
+Either way, reminders live in Apple Reminders rather than in files, so nothing here touches your
+notes or the index.
 
 ### TaskPaper
 

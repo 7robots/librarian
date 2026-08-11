@@ -13,6 +13,13 @@ dependencies = [
     "markdown>=3.5.0",
 ]
 
+# Optional: with remtui installed, the Reminders tool opens as a panel inside
+# Librarian instead of suspending and handing over the terminal.
+[project.optional-dependencies]
+# The marker keeps librarian installable on 3.10/3.11, where remtui (3.12+)
+# cannot be resolved; the panel simply is not available there.
+reminders = ["remtui @ git+https://github.com/7robots/remtui.git ; python_version >= '3.12'"]
+
 [project.scripts]
 librarian = "librarian.__main__:main"
 
@@ -29,6 +36,11 @@ build-backend = "hatchling.build"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+
+# remtui is referenced by git URL, which hatchling treats as a direct
+# reference and rejects unless allowed.
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/librarian"]

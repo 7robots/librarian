@@ -105,8 +105,20 @@ class FakeSuspend:
         return False
 
 
+@pytest.fixture
+def no_embedded_panel(monkeypatch):
+    """Force the external-program path, as on a machine without remtui.
+
+    remtui is an optional dependency needing Python 3.12+, so the executable
+    fallback has to keep working whether or not the package is importable here.
+    """
+    monkeypatch.setattr(
+        "librarian.widgets.reminders_modal.is_available", lambda: False
+    )
+
+
 class TestLaunching:
-    async def test_selecting_the_tool_launches_remtui(self, app, monkeypatch, tmp_path):
+    async def test_selecting_the_tool_launches_remtui(self, no_embedded_panel, app, monkeypatch, tmp_path):
         """End to end: picking Reminders from the menu suspends and runs remtui."""
         binary = tmp_path / "remtui"
         binary.write_text("#!/bin/sh\n")
@@ -142,7 +154,7 @@ class TestLaunching:
             assert calls == [[str(binary)]]
 
     async def test_missing_binary_notifies_instead_of_launching(
-        self, app, monkeypatch
+        self, no_embedded_panel, app, monkeypatch
     ):
         app.config.reminders = "definitely-not-installed"
         monkeypatch.setattr(
@@ -168,7 +180,7 @@ class TestLaunching:
             notifications = [n.message for n in app._notifications]
             assert any("definitely-not-installed" in m for m in notifications)
 
-    async def test_subprocess_failure_is_reported(self, app, monkeypatch, tmp_path):
+    async def test_subprocess_failure_is_reported(self, no_embedded_panel, app, monkeypatch, tmp_path):
         binary = tmp_path / "remtui"
         binary.write_text("#!/bin/sh\n")
         app.config.reminders = str(binary)
@@ -190,7 +202,7 @@ class TestLaunching:
             notifications = [n.message for n in app._notifications]
             assert any("exec format error" in m for m in notifications)
 
-    async def test_launching_leaves_the_panels_alone(self, app, monkeypatch, tmp_path):
+    async def test_launching_leaves_the_panels_alone(self, no_embedded_panel, app, monkeypatch, tmp_path):
         """Reminders is not a panel, so the content panel must not change."""
         binary = tmp_path / "remtui"
         binary.write_text("#!/bin/sh\n")
