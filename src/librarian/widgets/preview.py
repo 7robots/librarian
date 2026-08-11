@@ -210,6 +210,18 @@ class Preview(Vertical):
         else:
             await markdown.update(content or "")
 
+    async def show_markdown(self, title: str, content: str) -> None:
+        """Display markdown that does not come from a file.
+
+        Used for things the index knows nothing about, such as a calendar
+        meeting. There is no current file afterwards, so wiki links in the
+        content cannot be resolved relative to one.
+        """
+        self._current_file = None
+
+        self.query_one("#preview-header", Static).update(f"PREVIEW - {title}")
+        await self.markdown_widget.update(content)
+
     def get_current_file(self) -> Path | None:
         """Get the currently displayed file path."""
         return self._current_file

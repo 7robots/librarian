@@ -320,6 +320,23 @@ icalpal_path = ""      # empty = auto-detect
 - `widgets/calendar_list.py`: `CalendarList` widget with `MeetingItem` list items
 - `widgets/file_info.py`: `AssociateModal` - modal screen listing `#meetings`-tagged files for event-to-file association
 
+### Reading icalPal output
+Two field choices in `_parse_event()` are load-bearing and easy to "fix" back into bugs:
+
+- **Use `sctime`/`ectime`, not `start_date`/`end_date`.** For a recurring event, `start_date` holds
+  the *series* original start, not today's occurrence — which sorts the meeting away from its real
+  slot in the list. `sctime` carries the occurrence and a UTC offset
+  (`"2026-08-11 10:00:00 -0400"`).
+- **Integer timestamps use Apple's epoch, not Unix.** icalPal counts from 2001-01-01, so
+  `datetime.fromtimestamp()` lands 31 years in the past. `APPLE_EPOCH_OFFSET` corrects it. The
+  time-of-day still looks right, which is what makes this one easy to miss.
+
+Everything `_parse_datetime()` returns is timezone-aware, because `sctime` is aware and the integer
+fallback is not — sorting a mix of aware and naive datetimes raises `TypeError`.
+
+`recurring` comes from `has_recurrences`; icalPal has no `recurring` key. Null is treated as absent
+rather than false, since icalPal writes explicit nulls for fields that don't apply.
+
 ### User Experience
 1. Select "Calendar" in Tools → shows today's meetings
 2. Navigate meetings → preview shows associated note or meeting info

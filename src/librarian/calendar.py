@@ -11,6 +11,10 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+# Seconds between the Unix epoch (1970-01-01) and Apple's reference date
+# (2001-01-01), which is what icalPal's integer timestamps count from.
+APPLE_EPOCH_OFFSET = 978_307_200
+
 
 @dataclass
 class CalendarEvent:
@@ -66,12 +70,19 @@ def _parse_event(raw: dict) -> CalendarEvent | None:
         uid = raw.get("uid", raw.get("UUID", ""))
         title = raw.get("title", "Untitled")
 
-        # icalPal outputs dates in various formats
-        start_raw = raw.get("start_date", raw.get("sdate", raw.get("startDate", "")))
-        end_raw = raw.get("end_date", raw.get("edate", raw.get("endDate", "")))
+        # `sctime`/`ectime` are the fields to trust: they carry *this
+        # occurrence* and a UTC offset. For a recurring event, start_date holds
+        # the series' original start instead, which sorts the event away from
+        # its real slot in today's list.
+        start = _parse_datetime(raw.get("sctime"))
+        end = _parse_datetime(raw.get("ectime"))
 
-        start = _parse_datetime(start_raw)
-        end = _parse_datetime(end_raw)
+        if start is None:
+            start_raw = raw.get("start_date", raw.get("sdate", raw.get("startDate", "")))
+            start = _parse_datetime(start_raw)
+        if end is None:
+            end_raw = raw.get("end_date", raw.get("edate", raw.get("endDate", "")))
+            end = _parse_datetime(end_raw)
 
         if start is None or end is None:
             return None
@@ -96,21 +107,39 @@ def _parse_event(raw: dict) -> CalendarEvent | None:
             location=raw.get("location", "") or "",
             notes=raw.get("notes", "") or "",
             attendees=attendees,
-            recurring=bool(raw.get("recurring", False)),
+            recurring=_is_recurring(raw),
         )
     except (KeyError, ValueError, TypeError):
         return None
 
 
+def _is_recurring(raw: dict) -> bool:
+    """Whether an event repeats. icalPal spells this `has_recurrences`.
+
+    Null is treated as absent rather than false, since icalPal writes explicit
+    nulls for fields that do not apply to an event.
+    """
+    value = raw.get("has_recurrences")
+    if value is None:
+        value = raw.get("recurring", False)
+    return bool(value)
+
+
 def _parse_datetime(value) -> datetime | None:
-    """Parse a datetime value from icalPal output."""
+    """Parse a datetime value from icalPal output.
+
+    Always returns a timezone-aware datetime, so values from different fields
+    can be compared and sorted together. Naive values are assumed to be local.
+    """
+    if isinstance(value, bool):
+        return None
     if isinstance(value, (int, float)):
-        # Unix timestamp
-        return datetime.fromtimestamp(value)
+        # icalPal's integer timestamps count from Apple's reference date, not
+        # the Unix epoch. Read as Unix they land 31 years in the past.
+        return datetime.fromtimestamp(value + APPLE_EPOCH_OFFSET).astimezone()
     if isinstance(value, str):
         if not value:
             return None
-        # Try ISO format first
         for fmt in (
             "%Y-%m-%d %H:%M:%S %z",
             "%Y-%m-%d %H:%M:%S",
@@ -118,9 +147,10 @@ def _parse_datetime(value) -> datetime | None:
             "%Y-%m-%dT%H:%M:%S",
         ):
             try:
-                return datetime.strptime(value, fmt)
+                parsed = datetime.strptime(value, fmt)
             except ValueError:
                 continue
+            return parsed if parsed.tzinfo is not None else parsed.astimezone()
     return None
 
 

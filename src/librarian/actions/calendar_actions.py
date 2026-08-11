@@ -10,7 +10,6 @@ from ..database import get_files_by_tag
 from ..widgets import AssociateModal, FileList, Preview, TagList
 from ..widgets.calendar_list import CalendarList
 
-from textual.widgets import Static
 
 
 class CalendarActionsMixin:
@@ -64,10 +63,7 @@ class CalendarActionsMixin:
         else:
             preview = self.query_one("#preview", Preview)
             info = self._format_meeting_info(event.event)
-            preview.show_content(None, info, None)
-            preview.query_one("#preview-header", Static).update(
-                f"PREVIEW - {event.event.title}"
-            )
+            await preview.show_markdown(event.event.title, info)
             file_list = self.query_one("#file-list", FileList)
             file_list.update_files([], navigation_target=event.event.title)
 
