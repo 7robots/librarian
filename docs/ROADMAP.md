@@ -5,6 +5,41 @@ rather than scattering it across READMEs or issue comments.
 
 ## Planned
 
+### Split the left sidebar into three panels
+Folders on top, Tags in the middle, Tools at the bottom. Today Folders and Tags share one content
+panel and switching between them means losing sight of the other, but they serve different purposes:
+the folder tree is for browsing, while a tag like `#meetings` acts as a shortcut list to frequently
+used notes. Both want to be visible at once.
+
+Touches `TagList.compose()` (three panels instead of a content panel plus Tools), the CSS heights,
+`_switch_panel()` — which becomes narrower, since Folders and Tags no longer hide each other — and
+`LibrarianApp.FOCUS_ORDER` plus the focus map in `actions/navigation_actions.py`, which currently
+treats the content panel as one Tab stop. The Files panel follows whichever of the two was last
+used, so `_refresh_file_panel()` needs a notion of the active *source* rather than the active tool.
+Calendar still shares a panel with something; deciding which is part of the work.
+
+### Embed projection as a Projects tool
+Add [projection](https://github.com/7robots/projection) as the fourth optional tool, with the same
+experience as Reminders: a panel over the Files and Preview panels, `q` to close, falling back to
+running it as an external program.
+
+The refactor maps almost exactly onto remtui's: `ProjectsApp` is a ~740-line `App` with `CSS_PATH`,
+`BINDINGS`, `compose`, and `on_mount`, so it splits the same way — a `ProjectsPanel` widget holding
+the UI and logic with scoped `DEFAULT_CSS`, a thin screen, and an app shell. Four things differ:
+
+- **The repo is private.** Librarian is public, so an optional extra pointing at that git URL only
+  resolves for someone with access. The Tools entry stays off by default like the others, and the
+  panel must be a soft import so Librarian never fails to start without it.
+- **The module is named `tui`.** Depending on a top-level package that generic invites collisions;
+  renaming it to `projection` is worth doing first.
+- **It reads a Smartsheet token from 1Password at launch** (`op read`, which can block on Touch ID or
+  an unlock prompt). Embedded, that must happen when the panel opens rather than when Librarian
+  starts, and must degrade to a message rather than a hang or a crash.
+- **It talks to a network API** (Smartsheet over httpx), so the panel needs to behave offline.
+
+Prerequisite: projection is on `textual>=0.47.0` resolving 7.3.0, and needs to move to 8.2.8 to match
+the others.
+
 ### De-duplicate the taskpaper → markdown conversion
 `librarian/taskpaper.py` and `taskpapertui/widgets/preview.py` hold the same conversion, differing
 only in an arrow character in a docstring. TaskPaperTUI is the natural owner now that it has tests
