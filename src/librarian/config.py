@@ -1,5 +1,6 @@
 """Configuration loading and defaults for Librarian."""
 
+import os
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -7,8 +8,13 @@ from typing import Literal
 
 
 def get_config_dir() -> Path:
-    """Get the librarian config directory (XDG-style)."""
-    return Path.home() / ".config" / "librarian"
+    """Get the librarian config directory.
+
+    ``$XDG_CONFIG_HOME`` when set, else ``~/.config`` -- the same resolution
+    remtui and taskpapertui use, so all three keep config in one place.
+    """
+    base = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+    return base / "librarian"
 
 
 def get_config_path() -> Path:

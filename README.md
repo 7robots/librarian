@@ -44,13 +44,21 @@ Requires Python 3.10+ and [uv](https://github.com/astral-sh/uv).
 ```bash
 git clone https://github.com/7robots/librarian.git
 cd librarian
-uv sync
-uv run librarian
+./install.sh
+librarian
 ```
 
-On first run Librarian writes `~/.config/librarian/config.toml`, creates its index under
-`~/.local/share/librarian/`, and scans `~/Documents` for markdown and taskpaper files. Point
-`scan_directory` at your notes and restart.
+`install.sh` syncs the environment and puts a `librarian` launcher in `~/bin` (`--dir DIR` to choose
+elsewhere, `--uninstall` to remove it). The launcher runs this checkout, so `git pull && ./install.sh`
+is also the update path. The same script with the same defaults ships in
+[remtui](https://github.com/7robots/remtui) and
+[TaskPaperTUI](https://github.com/7robots/TaskPaperTUI).
+
+To run from the checkout without installing: `uv sync && uv run librarian`.
+
+On first run Librarian writes `~/.config/librarian/config.toml` (honoring `XDG_CONFIG_HOME`), creates
+its index under `~/.local/share/librarian/`, and scans `~/Documents` for markdown and taskpaper
+files. Point `scan_directory` at your notes and restart.
 
 Out of the box you get Folders and Tags. Everything that needs another program installed is off
 until you turn it on — see below.

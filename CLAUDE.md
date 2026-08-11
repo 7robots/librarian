@@ -35,7 +35,10 @@ src/librarian/
 
 ## Key Design Decisions
 
-- **Config location**: `~/.config/librarian/config.toml` (XDG standard)
+- **Config location**: `$XDG_CONFIG_HOME/librarian/config.toml`, else `~/.config/librarian/config.toml`.
+  remtui and taskpapertui resolve config the same way, so the three sit side by side
+- **Install**: `./install.sh` syncs the env and puts a launcher in `~/bin` (`--dir DIR`, `--uninstall`).
+  The identical script ships in remtui and taskpapertui — one install command across the three
 - **Index storage**: JSON at configurable `data_directory` (default: `~/.local/share/librarian/`). Atomic writes for iCloud compatibility.
 - **Tag format**: Inline hashtags matching `#[a-zA-Z][a-zA-Z0-9_-]*`, where the `#` must start a line
   or follow whitespace, and code blocks are skipped. Without the whitespace rule every URL fragment
