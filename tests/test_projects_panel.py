@@ -21,7 +21,7 @@ from librarian.widgets import TagList
 pytest.importorskip("projection", reason="projection is an optional dependency")
 
 from projection import panel as panel_module  # noqa: E402
-from projection.models import Project, ProjectProperties  # noqa: E402
+from projection.models import Project, ProjectFields  # noqa: E402
 from projection.panel import ProjectsPanel  # noqa: E402
 from projection.sync import SyncEvent  # noqa: E402
 
@@ -38,6 +38,14 @@ class FakeClient:
         return None
 
 
+def _project(title, remote_id=None, **fields):
+    """A project as projection's store holds it: local id, backend key mapped."""
+    project = Project(fields=ProjectFields(title=title, **fields))
+    if remote_id is not None:
+        project.link_remote("smartsheet", remote_id)
+    return project
+
+
 class FakeSync:
     """Stand-in SyncCoordinator serving canned projects.
 
@@ -48,21 +56,9 @@ class FakeSync:
     def __init__(self, *args, on_event=None, **kwargs):
         self._on_event = on_event
         self._projects = [
-            Project(
-                row_id=1,
-                title="ZTNA",
-                properties=ProjectProperties(status="In progress"),
-            ),
-            Project(
-                row_id=2,
-                title="AI Assistant",
-                properties=ProjectProperties(status="In progress", sync="Yes"),
-            ),
-            Project(
-                row_id=3,
-                title="Old Migration",
-                properties=ProjectProperties(status="Done"),
-            ),
+            _project("ZTNA", 1, status="In progress"),
+            _project("AI Assistant", 2, status="In progress", starred=True),
+            _project("Old Migration", 3, status="Done"),
         ]
 
     async def initial_sync(self):
@@ -74,6 +70,16 @@ class FakeSync:
 
     def load(self):
         return list(self._projects)
+
+    # The panel asks whether there is anything to sync with at all.
+    has_backend = True
+    backend_name = "smartsheet"
+
+    def conflicted(self):
+        return [p for p in self._projects if p.has_conflicts]
+
+    async def resolve_conflict(self, key, field_name, *, take_theirs):
+        return False
 
     def start_polling(self):
         pass
@@ -88,7 +94,7 @@ class FakeSync:
     def last_error(self):
         return None
 
-    def contact_options(self):
+    def assignee_options(self):
         return ["Al Pacheco", "Jefferson B"]
 
     def _emit_data_updated(self):
@@ -103,8 +109,8 @@ class FakeSync:
         self._emit_data_updated()
         return True
 
-    async def toggle_sync(self, key, value):
-        return await self.update_item(key, sync=value)
+    async def toggle_starred(self, key, starred):
+        return await self.update_item(key, starred=starred)
 
 
 @pytest.fixture
