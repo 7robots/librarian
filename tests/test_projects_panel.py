@@ -20,6 +20,19 @@ from librarian.widgets import TagList
 
 pytest.importorskip("projection", reason="projection is an optional dependency")
 
+# Importable is not the same as new enough. projection's model was reshaped when
+# its local store became the source of record, and an older checkout has no
+# `ProjectFields` -- so a bare import here raises ImportError during *collection*,
+# which aborts the entire run rather than skipping this module. projection is
+# installed by hand (it is not in the lockfile, and `uv sync` removes it), so a
+# stale one on some machine is an ordinary situation, not a broken install.
+if not hasattr(pytest.importorskip("projection.models"), "ProjectFields"):
+    pytest.skip(
+        "projection predates the local-first model (no ProjectFields) — "
+        "reinstall it with `uv pip install -e /path/to/projection`",
+        allow_module_level=True,
+    )
+
 from projection import panel as panel_module  # noqa: E402
 from projection.models import Project, ProjectFields  # noqa: E402
 from projection.panel import ProjectsPanel  # noqa: E402
