@@ -68,11 +68,11 @@ class RemindersModal(ModalScreen[None]):
     """
 
     BINDINGS = [
-        # The panel carries remtui's own `q -> quit` binding, but that does not
-        # resolve to anything here, so without this binding `q` simply does
-        # nothing and the panel cannot be closed by keyboard. priority so it
-        # wins wherever focus sits inside the panel. Escape belongs to the
-        # panel's filter, so it is deliberately not bound.
+        # The panel carries remtui's own `q -> app.quit`, which here means
+        # Librarian's quit: without priority, pressing `q` closes Librarian
+        # outright (verified -- the app stops and the panel stays up). priority
+        # makes this screen binding win wherever focus sits inside the panel.
+        # Escape belongs to the panel's filter, so it is deliberately not bound.
         Binding("q", "close", "Close reminders", priority=True),
     ]
 

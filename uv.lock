@@ -211,7 +211,7 @@ wheels = [
 [[package]]
 name = "remtui"
 version = "0.1.0"
-source = { git = "https://github.com/7robots/remtui.git#1353c78875975453d720658c7c96cd080155c45a" }
+source = { git = "https://github.com/7robots/remtui.git#07ae3184ccf22a5051294633935bd5b347cd277a" }
 dependencies = [
     { name = "textual", marker = "python_full_version >= '3.12'" },
 ]

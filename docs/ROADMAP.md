@@ -23,22 +23,33 @@ Add [projection](https://github.com/7robots/projection) as the fourth optional t
 experience as Reminders: a panel over the Files and Preview panels, `q` to close, falling back to
 running it as an external program.
 
-The refactor maps almost exactly onto remtui's: `ProjectsApp` is a ~740-line `App` with `CSS_PATH`,
-`BINDINGS`, `compose`, and `on_mount`, so it splits the same way — a `ProjectsPanel` widget holding
-the UI and logic with scoped `DEFAULT_CSS`, a thin screen, and an app shell. Four things differ:
+**Done on projection's side.** It now exposes `projection.panel.ProjectsPanel` — a widget with scoped
+`DEFAULT_CSS`, the same shape as remtui's — with the package renamed from `tui` to `projection`, the
+`q -> app.quit` fix, Textual pinned to 8.2.8, and `install.sh` matching the other three.
 
-- **The repo is private.** Librarian is public, so an optional extra pointing at that git URL only
-  resolves for someone with access. The Tools entry stays off by default like the others, and the
-  panel must be a soft import so Librarian never fails to start without it.
-- **The module is named `tui`.** Depending on a top-level package that generic invites collisions;
-  renaming it to `projection` is worth doing first.
-- **It reads a Smartsheet token from 1Password at launch** (`op read`, which can block on Touch ID or
-  an unlock prompt). Embedded, that must happen when the panel opens rather than when Librarian
-  starts, and must degrade to a message rather than a hang or a crash.
-- **It talks to a network API** (Smartsheet over httpx), so the panel needs to behave offline.
+**Left to do in Librarian**, mirroring `widgets/reminders_modal.py`:
 
-Prerequisite: projection is on `textual>=0.47.0` resolving 7.3.0, and needs to move to 8.2.8 to match
-the others.
+- A `ProjectsModal` framing `ProjectsPanel` over the Files and Preview panels, with `q` bound
+  `priority=True` to close — without that, `q` reaches the panel's `app.quit` and closes Librarian.
+- A `[tools] projection` flag, off by default, and a `Projects` entry in `ALL_TOOLS`.
+- A soft import so Librarian still runs without projection installed, with the existing
+  suspend-and-launch handoff (`~/bin/projection`) as the fallback.
+- Tests using the same fakes projection's own suite uses (`FakeClient`, `FakeSync`), skipped via
+  `importorskip`.
+
+**The dependency is deferred.** The optional extra would be:
+
+```toml
+[project.optional-dependencies]
+projects = ["projection @ git+https://github.com/7robots/projection.git ; python_version >= '3.11'"]
+```
+
+but that repository is **private**, so declaring it in a public project means `uv sync --extra
+projects` fails for anyone without access — unlike remtui, which is public. Options when we pick this
+up: leave the extra undeclared and document installing it by hand, publish projection, or split its
+panel into a public package. Two further wrinkles: it reads a Smartsheet token from 1Password
+(`op read`, which can block on Touch ID), so the panel must load it on open rather than at startup and
+degrade to a message; and it talks to Smartsheet over httpx, so it needs to behave offline.
 
 ### De-duplicate the taskpaper → markdown conversion
 `librarian/taskpaper.py` and `taskpapertui/widgets/preview.py` hold the same conversion, differing
