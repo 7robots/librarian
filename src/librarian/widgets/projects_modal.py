@@ -11,6 +11,8 @@ an optional dependency and lives in a private repository, so Librarian must run
 
 from __future__ import annotations
 
+import inspect
+
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
@@ -88,7 +90,14 @@ class ProjectsModal(ModalScreen[None]):
 
         with Vertical(id="projects-frame"):
             yield Static("PROJECTS", id="projects-hint")
-            yield ProjectsPanel(self._client, id="projects-panel")
+            # No wordmark: the frame above already says what this is,
+            # and three rows of sidebar are better spent on the lists. Older
+            # projection builds lack the flag; the logo is cosmetic, so show it
+            # rather than fail to open the panel at all.
+            options = {}
+            if "show_logo" in inspect.signature(ProjectsPanel).parameters:
+                options["show_logo"] = False
+            yield ProjectsPanel(self._client, id="projects-panel", **options)
             # The panel's keys differ from Librarian's, so the frame carries its
             # own footer rather than leaving Librarian's showing beneath.
             yield Footer()

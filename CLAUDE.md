@@ -604,6 +604,11 @@ dependency carries a `python_version >= '3.12'` marker for the same reason, and 
 
 Three things make the embed work:
 
+- **The embed drops the panel's wordmark.** Both panels take `show_logo=False`, which Librarian
+  passes: its own frame already labels the panel, so the three sidebar rows go to the lists instead.
+  The flag is newer than the embed, so each modal checks `inspect.signature` before passing it —
+  an older build would otherwise raise inside `compose()`, failing the whole modal rather than
+  just the logo. Mutation-verified.
 - **remtui exposes a widget, not a Screen.** Textual cannot nest one `App` inside another, and a
   `Screen` cannot be mounted inside a container. remtui's `RemindersPanel` is a plain widget with
   scoped `DEFAULT_CSS`, so hosting it cannot restyle Librarian; its dialogs carry their own

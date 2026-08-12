@@ -107,6 +107,25 @@ class TestEmbedding:
             assert panel.size.width < app.screen.size.width
 
 
+class TestChrome:
+    async def test_the_embed_drops_remtuis_wordmark(self, app, tmp_path, monkeypatch):
+        """Librarian's own frame already says REMINDERS above it."""
+        async with app.run_test(size=(120, 38)) as pilot:
+            await pilot.pause()
+            panel = await open_panel(app, pilot, tmp_path, monkeypatch)
+
+            assert not panel.query("#logo")
+            assert panel.query_one("#nav")
+
+    async def test_the_frame_still_labels_the_panel(self, app, tmp_path, monkeypatch):
+        async with app.run_test(size=(120, 38)) as pilot:
+            await pilot.pause()
+            await open_panel(app, pilot, tmp_path, monkeypatch)
+
+            hint = app.screen.query_one("#reminders-hint")
+            assert "REMINDERS" in str(hint.render())
+
+
 class TestClosing:
     async def test_q_closes_the_panel_and_librarian_survives(
         self, app, tmp_path, monkeypatch

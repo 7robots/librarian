@@ -199,6 +199,26 @@ class TestEmbedding:
             assert tag_list.directory_tree.styles.border_top == before
 
 
+class TestChrome:
+    async def test_the_embed_drops_projections_wordmark(self, app, fake_backend):
+        """Librarian's own frame already says PROJECTS above it, and the
+        sidebar rows are better spent on the lists."""
+        async with app.run_test(size=(120, 38)) as pilot:
+            await pilot.pause()
+            panel = await open_panel(app, pilot)
+
+            assert not panel.query("#logo")
+            assert panel.query_one("#nav")
+
+    async def test_the_frame_still_labels_the_panel(self, app, fake_backend):
+        async with app.run_test(size=(120, 38)) as pilot:
+            await pilot.pause()
+            await open_panel(app, pilot)
+
+            hint = app.screen.query_one("#projects-hint")
+            assert "PROJECTS" in str(hint.render())
+
+
 class TestClosing:
     async def test_q_closes_the_panel_and_librarian_survives(self, app, fake_backend):
         """projection's panel binds `q -> app.quit`, which is Librarian's quit.
@@ -274,3 +294,43 @@ class TestKeyIsolation:
                 await pilot.pause()
 
             assert list(app.config.export_directory.glob("*.html")) == []
+
+
+class TestOlderProjectionCompatibility:
+    """The flag is newer than the embed; an older build must still open.
+
+    compose() imports the panel from whatever is installed, so passing an
+    unknown keyword raises inside compose -- which fails the whole modal, not
+    just the logo.
+    """
+
+    async def test_a_panel_without_show_logo_still_mounts(
+        self, app, fake_backend, monkeypatch
+    ):
+        import projection.panel as projection_panel
+
+        class OldPanel(ProjectsPanel):
+            """Signature has no `show_logo`, like the build before the flag."""
+
+            def __init__(self, client=None, **kwargs):
+                if "show_logo" in kwargs:
+                    raise TypeError(
+                        "__init__() got an unexpected keyword argument 'show_logo'"
+                    )
+                super().__init__(client, **kwargs)
+
+        monkeypatch.setattr(projection_panel, "ProjectsPanel", OldPanel)
+
+        async with app.run_test(size=(120, 38)) as pilot:
+            await pilot.pause()
+            app.push_screen(ProjectsModal(FakeClient()))
+            for _ in range(20):
+                await pilot.pause()
+                if isinstance(app.screen, ProjectsModal):
+                    break
+
+            assert isinstance(app.screen, ProjectsModal)
+            assert app.is_running
+            # It keeps its wordmark -- cosmetic, and better than not opening.
+            panel = app.screen.query_one("#projects-panel")
+            assert panel.query("#logo")
