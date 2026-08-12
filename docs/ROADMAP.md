@@ -5,19 +5,6 @@ rather than scattering it across READMEs or issue comments.
 
 ## Planned
 
-### Split the left sidebar into three panels
-Folders on top, Tags in the middle, Tools at the bottom. Today Folders and Tags share one content
-panel and switching between them means losing sight of the other, but they serve different purposes:
-the folder tree is for browsing, while a tag like `#meetings` acts as a shortcut list to frequently
-used notes. Both want to be visible at once.
-
-Touches `TagList.compose()` (three panels instead of a content panel plus Tools), the CSS heights,
-`_switch_panel()` — which becomes narrower, since Folders and Tags no longer hide each other — and
-`LibrarianApp.FOCUS_ORDER` plus the focus map in `actions/navigation_actions.py`, which currently
-treats the content panel as one Tab stop. The Files panel follows whichever of the two was last
-used, so `_refresh_file_panel()` needs a notion of the active *source* rather than the active tool.
-Calendar still shares a panel with something; deciding which is part of the work.
-
 ### Embed projection as a Projects tool
 Add [projection](https://github.com/7robots/projection) as the fourth optional tool, with the same
 experience as Reminders: a panel over the Files and Preview panels, `q` to close, falling back to

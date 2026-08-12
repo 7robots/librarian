@@ -60,29 +60,42 @@ def app(config, tmp_index):
     yield app
 
 
+def select_tag(tag_list, name):
+    """Select a tag in the Tags panel, as clicking or pressing enter would."""
+    from librarian.widgets.tag_list import TagItem
+
+    tags = tag_list.all_tags_list_view
+    for index, item in enumerate(tags.children):
+        if isinstance(item, TagItem) and item.tag_name == name:
+            tags.index = index
+            tag_list.on_list_view_selected(
+                type("Selected", (), {"item": item})()
+            )
+            return
+    raise AssertionError(f"no tag named {name!r}")
+
+
 def folder_of(tree, name):
     """Find a child node of the tree root by folder name."""
     return next(node for node in tree.root.children if node.data.path.name == name)
 
 
-class TestDefaultTool:
-    async def test_opens_on_folders(self, app):
-        async with app.run_test(size=(100, 30)) as pilot:
+class TestThreePanels:
+    async def test_folders_and_tags_are_both_visible(self, app):
+        """The point of the three-panel sidebar: no switching between them."""
+        async with app.run_test(size=(100, 40)) as pilot:
             await pilot.pause()
             tag_list = app.query_one(TagList)
 
-            assert tag_list.active_tool == "folders"
-            assert not tag_list.query_one("#folders-section").has_class("hidden")
-            assert tag_list.query_one("#tags-section").has_class("hidden")
+            assert tag_list.directory_tree.is_mounted
+            assert tag_list.all_tags_list_view.is_mounted
+            assert tag_list.directory_tree.display
+            assert tag_list.all_tags_list_view.display
 
-    async def test_tools_menu_highlights_the_active_tool(self, app):
-        async with app.run_test(size=(100, 30)) as pilot:
+    async def test_folders_drives_the_files_panel_at_startup(self, app):
+        async with app.run_test(size=(100, 40)) as pilot:
             await pilot.pause()
-            tag_list = app.query_one(TagList)
-            highlighted = tag_list.tools_list_view.highlighted_child
-
-            assert isinstance(highlighted, ToolItem)
-            assert highlighted.tool_name == "Folders"
+            assert app.query_one(TagList).active_source == "folders"
 
     async def test_startup_focus_is_the_folder_tree(self, app):
         """Browsing starts in the folder tree, not the Tools mode switch."""
@@ -116,16 +129,16 @@ class TestDefaultTool:
 
 
 class TestPanelOrder:
-    async def test_content_panel_comes_before_tools(self, app):
-        async with app.run_test(size=(100, 30)) as pilot:
+    async def test_panels_run_folders_tags_tools(self, app):
+        async with app.run_test(size=(100, 40)) as pilot:
             await pilot.pause()
-            tag_list = app.query_one(TagList)
-            ids = [child.id for child in tag_list.children]
+            ids = [child.id for child in app.query_one(TagList).children]
 
-            assert ids.index("content-panel") < ids.index("tools-panel")
+            assert ids == ["folders-panel", "tags-panel", "tools-panel"]
 
-    async def test_focus_order_is_clockwise_from_content(self, app):
-        async with app.run_test(size=(100, 30)) as pilot:
+    async def test_focus_order_goes_down_the_left_then_the_right(self, app):
+        """With no tools enabled the Tools panel is empty, so Tab skips it."""
+        async with app.run_test(size=(100, 40)) as pilot:
             await pilot.pause()
             tag_list = app.query_one(TagList)
             file_list = app.query_one(FileList)
@@ -141,11 +154,41 @@ class TestPanelOrder:
                 seen.append(app.focused)
 
             assert seen == [
+                tag_list.all_tags_list_view,
                 file_list.list_view,
                 preview.scroll_view,
-                tag_list.tools_list_view,
                 tag_list.directory_tree,
             ]
+
+    async def test_enabled_tools_panel_is_a_focus_stop(self, config, tmp_index):
+        from librarian.app import LibrarianApp
+        from librarian.config import ToolsConfig
+
+        config.tools = ToolsConfig(reminders=True)
+        app = LibrarianApp(config)
+
+        async with app.run_test(size=(100, 40)) as pilot:
+            await pilot.pause()
+            tag_list = app.query_one(TagList)
+
+            tag_list.all_tags_list_view.focus()
+            await pilot.pause()
+            app.action_focus_next()
+            await pilot.pause()
+
+            assert app.focused is tag_list.tools_list_view
+
+    async def test_shift_tab_walks_back_up(self, app):
+        async with app.run_test(size=(100, 40)) as pilot:
+            await pilot.pause()
+            tag_list = app.query_one(TagList)
+
+            tag_list.all_tags_list_view.focus()
+            await pilot.pause()
+            app.action_focus_previous()
+            await pilot.pause()
+
+            assert app.focused is tag_list.directory_tree
 
 
 class TestAgentsRemoved:
@@ -295,13 +338,13 @@ class TestSearchExit:
             assert file_list.get_header_text() == "FILES (techne/)"
 
     async def test_tag_listing_is_restored(self, app):
-        """The restore follows the active tool, not just the folder view."""
-        async with app.run_test(size=(100, 30)) as pilot:
+        """The restore follows whichever panel drives Files, not just Folders."""
+        async with app.run_test(size=(100, 40)) as pilot:
             await pilot.pause()
             tag_list = app.query_one(TagList)
             file_list = app.query_one(FileList)
 
-            tag_list._switch_panel("tags")
+            select_tag(tag_list, "tagged")
             await pilot.pause()
             await pilot.pause()
 
@@ -319,12 +362,12 @@ class TestWithoutNotebookNavigator:
     """The scan directory here is a plain folder — no vault, no plugin."""
 
     async def test_app_starts_and_lists_folders(self, app):
-        async with app.run_test(size=(100, 30)) as pilot:
+        async with app.run_test(size=(100, 40)) as pilot:
             await pilot.pause()
             tag_list = app.query_one(TagList)
             file_list = app.query_one(FileList)
 
-            assert tag_list.active_tool == "folders"
+            assert tag_list.active_source == "folders"
             assert file_list.get_header_text() == "FILES (vault/)"
 
     async def test_appearance_has_no_sources(self, app):
@@ -373,39 +416,24 @@ class TestWithoutNotebookNavigator:
             )
 
 
-class TestToolSwitching:
-    async def test_switching_to_tags_shows_tag_files(self, app):
-        async with app.run_test(size=(100, 30)) as pilot:
+class TestFilesFollowsTheLastPanelTouched:
+    """Both panels are visible, so the last one used drives the Files list."""
+
+    async def test_selecting_a_tag_switches_the_source(self, app):
+        async with app.run_test(size=(100, 40)) as pilot:
             await pilot.pause()
             tag_list = app.query_one(TagList)
             file_list = app.query_one(FileList)
 
-            tag_list._switch_panel("tags")
+            select_tag(tag_list, "tagged")
             await pilot.pause()
             await pilot.pause()
 
-            assert tag_list.active_tool == "tags"
+            assert tag_list.active_source == "tags"
             assert file_list.get_header_text() == "FILES (#tagged)"
 
-    async def test_switching_back_to_folders_restores_folder_files(self, app):
-        async with app.run_test(size=(100, 30)) as pilot:
-            await pilot.pause()
-            tag_list = app.query_one(TagList)
-            file_list = app.query_one(FileList)
-
-            tag_list._switch_panel("tags")
-            await pilot.pause()
-            await pilot.pause()
-            tag_list._switch_panel("folders")
-            await pilot.pause()
-            await pilot.pause()
-
-            assert file_list.get_header_text() == "FILES (vault/)"
-            assert [f.name for f in file_list._files] == ["root-note.md"]
-
-    async def test_folder_cursor_ignored_while_tags_active(self, app):
-        """Moving the tree cursor must not hijack the Files panel in tag view."""
-        async with app.run_test(size=(100, 30)) as pilot:
+    async def test_moving_the_folder_cursor_switches_back(self, app):
+        async with app.run_test(size=(100, 40)) as pilot:
             await pilot.pause()
             tag_list = app.query_one(TagList)
             file_list = app.query_one(FileList)
@@ -414,11 +442,30 @@ class TestToolSwitching:
             tree.root.expand()
             await pilot.pause()
 
-            tag_list._switch_panel("tags")
+            select_tag(tag_list, "tagged")
+            await pilot.pause()
+            await pilot.pause()
+            assert file_list.get_header_text() == "FILES (#tagged)"
+
+            tree.cursor_line = folder_of(tree, "techne").line
             await pilot.pause()
             await pilot.pause()
 
-            tree.cursor_line = folder_of(tree, "techne").line
+            assert tag_list.active_source == "folders"
+            assert file_list.get_header_text() == "FILES (techne/)"
+
+    async def test_index_updates_respect_the_tag_source(self, app):
+        """A rescan must not drag the Files panel back to a folder."""
+        async with app.run_test(size=(100, 40)) as pilot:
+            await pilot.pause()
+            tag_list = app.query_one(TagList)
+            file_list = app.query_one(FileList)
+
+            select_tag(tag_list, "tagged")
+            await pilot.pause()
+            await pilot.pause()
+
+            app._refresh_file_panel()
             await pilot.pause()
             await pilot.pause()
 

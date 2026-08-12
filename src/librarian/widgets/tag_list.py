@@ -13,27 +13,29 @@ from textual.widgets._directory_tree import DirEntry
 from textual.widgets._tree import TOGGLE_STYLE, TreeNode
 
 from ..appearance import FolderAppearance
-from .calendar_list import CalendarList
 
 # Maximum tags to display before showing "Show more" item
 MAX_DISPLAY_TAGS = 200
 
-# Every tool Librarian knows about, in display order.
-ALL_TOOLS = ("Tags", "Folders", "TaskPaper", "Reminders", "Calendar")
+# Every tool Librarian knows about, in display order. Folders and Tags are no
+# longer here: they have permanent panels of their own, so everything in the
+# Tools menu now launches something.
+ALL_TOOLS = ("TaskPaper", "Reminders", "Calendar")
 
 # Tools hidden unless enabled in config. The code behind them stays live; only
 # the menu entry is withheld.
-OPTIONAL_TOOLS = ("TaskPaper", "Reminders", "Calendar")
+OPTIONAL_TOOLS = ALL_TOOLS
 
-# What the menu shows when nothing is configured.
-DEFAULT_TOOLS = tuple(name for name in ALL_TOOLS if name not in OPTIONAL_TOOLS)
+# What the menu shows when nothing is configured: nothing, since every tool
+# needs a third-party program.
+DEFAULT_TOOLS: tuple[str, ...] = ()
 
-# Tools that launch an external program instead of switching the content panel.
-LAUNCHER_TOOLS = ("taskpaper", "reminders")
+# Every tool now launches something rather than switching a panel.
+LAUNCHER_TOOLS = ("taskpaper", "reminders", "calendar")
 
-# Tool the sidebar opens on. Folders leads because content is organized by
-# folder; the tag index is a secondary view.
-DEFAULT_TOOL = "folders"
+# Which panel drives the Files list at startup. Folders leads because content is
+# organized by folder; tags are a shortcut list alongside it.
+DEFAULT_SOURCE = "folders"
 
 
 class MarkdownDirectoryTree(DirectoryTree):
@@ -177,8 +179,29 @@ class TagList(Vertical):
         color: $warning;
     }
 
-    TagList #tools-panel {
+    /* Folders gets the most room; Tools is a short list of launchers, so it
+       takes only the rows it needs. */
+    TagList #folders-panel {
+        height: 2fr;
+        border: solid $success;
+    }
+
+    TagList #folders-panel:focus-within {
+        border: solid green;
+    }
+
+    TagList #tags-panel {
         height: 1fr;
+        border: solid $primary;
+    }
+
+    TagList #tags-panel:focus-within {
+        border: solid $primary-lighten-2;
+    }
+
+    TagList #tools-panel {
+        height: auto;
+        max-height: 40%;
         border: solid $accent;
     }
 
@@ -208,23 +231,6 @@ class TagList(Vertical):
 
     TagList #folders-header {
         color: $success;
-    }
-
-    TagList #content-panel {
-        height: 1fr;
-        border: solid $primary;
-    }
-
-    TagList #content-panel:focus-within {
-        border: solid $primary-lighten-2;
-    }
-
-    TagList .content-section {
-        height: 1fr;
-    }
-
-    TagList .content-section.hidden {
-        display: none;
     }
 
     TagList ListView {
@@ -276,11 +282,6 @@ class TagList(Vertical):
             super().__init__()
             self.tool_name = tool_name
 
-    class CalendarRefreshRequested(Message):
-        """Message emitted when the calendar panel is shown and needs data."""
-
-        pass
-
     def __init__(
         self,
         scan_directory: Path | None = None,
@@ -293,35 +294,25 @@ class TagList(Vertical):
         self._all_tags: list[tuple[str, int]] = []
         self._scan_directory = scan_directory or Path.home()
         self._appearance = appearance
-        self.active_tool: str = DEFAULT_TOOL
+        # Which panel drives the Files list: "folders" or "tags". Both are
+        # always visible, so the last one touched wins.
+        self.active_source: str = DEFAULT_SOURCE
         self._tags_show_all: bool = False
 
-    def _section_classes(self, tool: str) -> str:
-        """CSS classes for a content section, hidden unless it is the active tool."""
-        if tool == self.active_tool:
-            return "content-section"
-        return "content-section hidden"
-
     def compose(self) -> ComposeResult:
-        # Content panel sits above Tools: the folder tree is what gets used
-        # constantly, so it takes the top slot.
-        with Vertical(id="content-panel"):
-            with Vertical(id="tags-section", classes=self._section_classes("tags")):
-                yield Static("ALL TAGS", classes="tag-header", id="all-tags-header")
-                yield ListView(id="all-tags-list-view")
-            with Vertical(
-                id="folders-section", classes=self._section_classes("folders")
-            ):
-                yield Static("FOLDERS", classes="tag-header", id="folders-header")
-                yield MarkdownDirectoryTree(
-                    str(self._scan_directory),
-                    appearance=self._appearance,
-                    id="directory-tree",
-                )
-            with Vertical(
-                id="calendar-section", classes=self._section_classes("calendar")
-            ):
-                yield CalendarList(id="calendar-list")
+        # Three permanent panels. Folders and Tags are both visible because they
+        # do different jobs -- the tree is for browsing, a tag like #meetings is
+        # a shortcut list -- and switching between them lost sight of the other.
+        with Vertical(id="folders-panel"):
+            yield Static("FOLDERS", classes="tag-header", id="folders-header")
+            yield MarkdownDirectoryTree(
+                str(self._scan_directory),
+                appearance=self._appearance,
+                id="directory-tree",
+            )
+        with Vertical(id="tags-panel"):
+            yield Static("ALL TAGS", classes="tag-header", id="all-tags-header")
+            yield ListView(id="all-tags-list-view")
         with Vertical(id="tools-panel"):
             yield Static("\u2605 TOOLS", classes="tag-header", id="tools-header")
             yield ListView(
@@ -414,63 +405,19 @@ class TagList(Vertical):
                 all_list.index = i
                 return
 
-    @property
-    def calendar_list(self) -> CalendarList:
-        return self.query_one("#calendar-list", CalendarList)
+    def initialize(self) -> None:
+        """Focus the folder tree and announce its starting folder.
 
-    def _switch_panel(self, panel_name: str, focus: bool = True) -> None:
-        """Hide all content sections, then show the requested one.
-
-        Also republishes the active selection so the Files panel follows the
-        tool: the highlighted folder for Folders, the highlighted tag for Tags.
+        Called once at startup. Folders leads, so browsing begins there.
         """
-        self.active_tool = panel_name
-        tags_section = self.query_one("#tags-section")
-        folders_section = self.query_one("#folders-section")
-        calendar_section = self.query_one("#calendar-section")
+        tree = self.directory_tree
+        if tree.cursor_line < 0:
+            tree.cursor_line = 0
+        tree.focus()
 
-        for section in (tags_section, folders_section, calendar_section):
-            section.add_class("hidden")
-
-        if panel_name == "tags":
-            tags_section.remove_class("hidden")
-            if focus:
-                self.all_tags_list_view.focus()
-            selected_tag = self.get_selected_tag()
-            if selected_tag:
-                self.post_message(self.TagSelected(selected_tag))
-        elif panel_name == "folders":
-            folders_section.remove_class("hidden")
-            if focus:
-                self.directory_tree.focus()
-            folder = self.get_selected_folder()
-            if folder is not None:
-                self.post_message(self.FolderHighlighted(folder))
-        elif panel_name == "calendar":
-            calendar_section.remove_class("hidden")
-            if focus:
-                self.calendar_list.list_view.focus()
-            self.post_message(self.CalendarRefreshRequested())
-
-    def initialize_default_tool(self) -> None:
-        """Sync the Tools menu highlight and content panel to the default tool.
-
-        Called once at startup. Focus lands on the content panel -- the folder
-        tree, by default -- since that is where browsing starts; the Tools menu
-        is a mode switch reached with Tab.
-        """
-        for i, name in enumerate(self.tools):
-            if name.lower() == self.active_tool:
-                self.tools_list_view.index = i
-                break
-        self._switch_panel(self.active_tool)
-
-        # Put the tree cursor on the root folder so the starting position is
-        # visible, rather than an unset cursor.
-        if self.active_tool == "folders":
-            tree = self.directory_tree
-            if tree.cursor_line < 0:
-                tree.cursor_line = 0
+        folder = self.get_selected_folder()
+        if folder is not None:
+            self.post_message(self.FolderHighlighted(folder))
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         """Handle selection from tools menu or tag list."""
@@ -479,12 +426,9 @@ class TagList(Vertical):
         # Handle tools menu selection
         if isinstance(item, ToolItem):
             tool = item.tool_name.lower()
+            # Every tool launches something; the sidebar panels stay put.
             if tool in LAUNCHER_TOOLS:
-                # These hand off to an external program; the content panel and
-                # active_tool stay as they were.
                 self.post_message(self.ToolLaunched(tool))
-            else:
-                self._switch_panel(tool)
             return
 
         # Handle "Show more" item
@@ -495,6 +439,7 @@ class TagList(Vertical):
 
         # Handle tag list selection
         if isinstance(item, TagItem):
+            self.active_source = "tags"
             self.post_message(self.TagSelected(item.tag_name))
 
     def on_directory_tree_file_selected(self, event: DirectoryTree.FileSelected) -> None:
@@ -504,11 +449,9 @@ class TagList(Vertical):
 
     def on_tree_node_highlighted(self, event: Tree.NodeHighlighted) -> None:
         """Announce the folder under the cursor so the Files panel can follow."""
-        if self.active_tool != "folders":
-            return
-
         folder = self._folder_for_node(event.node)
         if folder is not None:
+            self.active_source = "folders"
             self.post_message(self.FolderHighlighted(folder))
 
     @staticmethod

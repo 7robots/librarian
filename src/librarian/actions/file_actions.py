@@ -19,6 +19,19 @@ from textual.widgets import Static
 class FileActionsMixin:
     """Mixin providing file operation actions (new, edit, rename, move, delete, export)."""
 
+    def _taskpaper_context(self) -> bool:
+        """Whether new files should be `.taskpaper`.
+
+        Derived from what is on screen -- the Files panel showing the
+        `#taskpaper` tag -- rather than a hidden mode flag, now that Folders and
+        Tags are both permanently visible.
+        """
+        tag_list = self.query_one("#tag-list", TagList)
+        if tag_list.active_source != "tags":
+            return False
+        selected = tag_list.get_selected_tag()
+        return bool(selected) and selected.lower() == "taskpaper"
+
     async def action_edit(self) -> None:
         """Edit the currently previewed file."""
         preview = self.query_one("#preview", Preview)
@@ -36,13 +49,13 @@ class FileActionsMixin:
 
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
 
-        if tag_list.active_tool == "taskpaper":
+        if self._taskpaper_context():
             filename = f"new-note-{timestamp}.taskpaper"
             file_path = self.config.scan_directory / filename
             content = "Inbox:\n\t- \n\n#taskpaper\n"
-        elif tag_list.active_tool == "calendar":
-            # Create meeting note from selected event
-            event = tag_list.calendar_list.get_selected_event()
+        elif self._calendar_list() is not None:
+            # Create meeting note from the selected event
+            event = self._calendar_list().get_selected_event()
             if event:
                 safe_title = "".join(
                     c if c.isalnum() or c in " -_" else "" for c in event.title

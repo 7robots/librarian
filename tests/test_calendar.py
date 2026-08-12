@@ -221,29 +221,34 @@ class TestMeetingPreview:
             )
         )
 
-    async def test_meeting_details_render_in_preview(self, app):
-        from librarian.widgets import Preview, TagList
+    async def test_meeting_details_render_in_the_calendar_preview(self, app):
+        """The calendar modal carries its own preview, since it covers the main one."""
+        from librarian.widgets.calendar_modal import CalendarModal
 
         event = _parse_event(raw_event(title="Standup", location="Room 1"))
 
-        async with app.run_test(size=(100, 30)) as pilot:
+        async with app.run_test(size=(100, 40)) as pilot:
             await pilot.pause()
-            tag_list = app.query_one(TagList)
-            tag_list._switch_panel("calendar")
+            app.action_open_calendar()
+            for _ in range(10):
+                await pilot.pause()
+                if isinstance(app.screen, CalendarModal):
+                    break
+
+            modal = app.screen
+            assert isinstance(modal, CalendarModal)
+
+            modal.calendar_list.update_events([event])
+            await pilot.pause()
+            modal.calendar_list.list_view.index = 0
+            await pilot.pause()
             await pilot.pause()
 
-            tag_list.calendar_list.update_events([event])
-            await pilot.pause()
-            tag_list.calendar_list.list_view.index = 0
-            await pilot.pause()
-            await pilot.pause()
-
-            preview = app.query_one(Preview)
-            header = preview.query_one("#preview-header")
+            header = modal.preview.query_one("#preview-header")
             assert "Standup" in str(header.render())
             # A meeting is not a file, so there is no current file to link from.
-            assert preview.get_current_file() is None
-            assert len(list(preview.markdown_widget.children)) > 0
+            assert modal.preview.get_current_file() is None
+            assert len(list(modal.preview.markdown_widget.children)) > 0
 
     async def test_preview_show_markdown_clears_current_file(self, app):
         from librarian.widgets import Preview

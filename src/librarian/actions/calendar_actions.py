@@ -9,25 +9,58 @@ from ..calendar_store import get_association, set_association
 from ..database import get_files_by_tag
 from ..widgets import AssociateModal, FileList, Preview, TagList
 from ..widgets.calendar_list import CalendarList
+from ..widgets.calendar_modal import CalendarModal
 
 
 
 class CalendarActionsMixin:
-    """Mixin providing calendar-related actions."""
+    """Mixin providing calendar-related actions.
 
-    def on_tag_list_calendar_refresh_requested(
-        self, event: TagList.CalendarRefreshRequested
-    ) -> None:
-        """Handle calendar panel activation — fetch events in background."""
+    The calendar lives in a modal over the right-hand panels, so everything here
+    looks the view up rather than assuming where it is.
+    """
+
+    def _calendar_modal(self) -> CalendarModal | None:
+        """The open calendar modal, if there is one."""
+        for screen in reversed(self.screen_stack):
+            if isinstance(screen, CalendarModal):
+                return screen
+        return None
+
+    def _calendar_list(self) -> CalendarList | None:
+        modal = self._calendar_modal()
+        return modal.calendar_list if modal is not None else None
+
+    def _calendar_preview(self) -> Preview:
+        """The preview to write meeting details into.
+
+        The modal carries its own, since it covers Librarian's.
+        """
+        modal = self._calendar_modal()
+        if modal is not None:
+            return modal.preview
+        return self.query_one("#preview", Preview)
+
+    def action_open_calendar(self) -> None:
+        """Open today's meetings in a panel over the right-hand panels."""
+        if not self.config.tools.calendar:
+            self.notify(
+                "Calendar is off. Set calendar = true under [tools] to enable it.",
+                severity="warning",
+            )
+            return
+
+        self.push_screen(CalendarModal())
         self._fetch_calendar_events()
 
     def _fetch_calendar_events(self) -> None:
         """Fetch calendar events in a background worker."""
         if not self.config.tools.calendar:
-            tag_list = self.query_one("#tag-list", TagList)
-            tag_list.calendar_list.show_error(
-                "Calendar is off. Set calendar = true under [tools] to enable it."
-            )
+            calendar_list = self._calendar_list()
+            if calendar_list is not None:
+                calendar_list.show_error(
+                    "Calendar is off. Set calendar = true under [tools] to enable it."
+                )
             return
 
         self.run_worker(
@@ -51,18 +84,13 @@ class CalendarActionsMixin:
         self, event: CalendarList.MeetingSelected
     ) -> None:
         """Handle meeting highlight — show associated note in preview."""
+        preview = self._calendar_preview()
         associated_file = get_association(event.event.uid)
         if associated_file:
-            file_list = self.query_one("#file-list", FileList)
-            file_list.update_files([associated_file], navigation_target=event.event.title)
-            preview = self.query_one("#preview", Preview)
             await preview.show_file(associated_file)
         else:
-            preview = self.query_one("#preview", Preview)
             info = self._format_meeting_info(event.event)
             await preview.show_markdown(event.event.title, info)
-            file_list = self.query_one("#file-list", FileList)
-            file_list.update_files([], navigation_target=event.event.title)
 
     def _format_meeting_info(self, event: CalendarEvent) -> str:
         """Format a CalendarEvent as markdown for preview."""
@@ -81,11 +109,11 @@ class CalendarActionsMixin:
 
     def action_associate_meeting(self) -> None:
         """Associate the selected meeting with a file from #meetings tag."""
-        tag_list = self.query_one("#tag-list", TagList)
-        if tag_list.active_tool != "calendar":
+        calendar_list = self._calendar_list()
+        if calendar_list is None:
             return
 
-        event = tag_list.calendar_list.get_selected_event()
+        event = calendar_list.get_selected_event()
         if not event:
             self.notify("No meeting selected", severity="warning")
             return
@@ -116,7 +144,4 @@ class CalendarActionsMixin:
         set_association(event_uid, file_path)
         self.notify(f"Associated '{event_title}' with {file_path.name}")
 
-        file_list = self.query_one("#file-list", FileList)
-        file_list.update_files([file_path], navigation_target=event_title)
-        preview = self.query_one("#preview", Preview)
-        await preview.show_file(file_path)
+        await self._calendar_preview().show_file(file_path)

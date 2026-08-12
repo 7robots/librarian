@@ -56,6 +56,19 @@ class MarkdownEventHandler(FileSystemEventHandler):
             self._timer.daemon = True
             self._timer.start()
 
+    def cancel(self) -> None:
+        """Drop any pending work without processing it.
+
+        Called on shutdown: the debounce timer runs in its own thread, so
+        without this a file saved just before quitting gets rescanned against a
+        database that is already being torn down.
+        """
+        with self._lock:
+            if self._timer is not None:
+                self._timer.cancel()
+                self._timer = None
+            self._pending_paths.clear()
+
     def _process_pending(self) -> None:
         """Process all pending file changes."""
         with self._lock:
@@ -138,12 +151,14 @@ class FileWatcher:
         logger.info("File watcher started: %s", self.config.scan_directory)
 
     def stop(self) -> None:
-        """Stop watching."""
+        """Stop watching, discarding anything still in the debounce window."""
+        if self._handler is not None:
+            self._handler.cancel()
         if self._observer is not None:
             self._observer.stop()
             self._observer.join(timeout=1.0)
             self._observer = None
-            self._handler = None
+        self._handler = None
 
     def __enter__(self) -> "FileWatcher":
         self.start()

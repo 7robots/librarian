@@ -17,13 +17,13 @@ class NavigationActionsMixin:
         """Get a focusable widget by ID."""
         tag_list = self.query_one("#tag-list", TagList)
         if widget_id == "tools-list-view":
-            return tag_list.tools_list_view
-        elif widget_id == "content-panel":
-            # Whichever view the active tool has in the content panel.
-            if tag_list.active_tool == "folders":
-                return tag_list.directory_tree
-            elif tag_list.active_tool == "calendar":
-                return tag_list.calendar_list.list_view
+            tools = tag_list.tools_list_view
+            # With every tool optional, the menu can be empty; an empty panel is
+            # not worth a Tab stop.
+            return tools if list(tools.children) else None
+        elif widget_id == "directory-tree":
+            return tag_list.directory_tree
+        elif widget_id == "all-tags-list-view":
             return tag_list.all_tags_list_view
         elif widget_id == "file-list-view":
             return self.query_one("#file-list", FileList).list_view
@@ -42,30 +42,31 @@ class NavigationActionsMixin:
         preview = self.query_one("#preview", Preview)
 
         focus_map = {
-            id(tag_list.all_tags_list_view): 0,
             id(tag_list.directory_tree): 0,
-            id(tag_list.calendar_list.list_view): 0,
-            id(file_list.list_view): 1,
-            id(preview.scroll_view): 2,
-            id(tag_list.tools_list_view): 3,
+            id(tag_list.all_tags_list_view): 1,
+            id(tag_list.tools_list_view): 2,
+            id(file_list.list_view): 3,
+            id(preview.scroll_view): 4,
         }
         return focus_map.get(id(focused), -1)
 
     def action_focus_next(self) -> None:
-        """Focus the next panel in clockwise order."""
-        current = self._get_current_focus_index()
-        next_index = (current + 1) % len(self.FOCUS_ORDER)
-        widget = self._get_focus_widget(self.FOCUS_ORDER[next_index])
-        if widget:
-            widget.focus()
+        """Focus the next panel, down the left column and then the right."""
+        self._focus_step(1)
 
     def action_focus_previous(self) -> None:
-        """Focus the previous panel in counter-clockwise order."""
-        current = self._get_current_focus_index()
-        prev_index = (current - 1) % len(self.FOCUS_ORDER)
-        widget = self._get_focus_widget(self.FOCUS_ORDER[prev_index])
-        if widget:
-            widget.focus()
+        """Focus the previous panel."""
+        self._focus_step(-1)
+
+    def _focus_step(self, direction: int) -> None:
+        """Move focus by one stop, skipping panels that have nothing to focus."""
+        index = self._get_current_focus_index()
+        for _ in range(len(self.FOCUS_ORDER)):
+            index = (index + direction) % len(self.FOCUS_ORDER)
+            widget = self._get_focus_widget(self.FOCUS_ORDER[index])
+            if widget is not None:
+                widget.focus()
+                return
 
     async def on_preview_wiki_link_clicked(
         self, event: Preview.WikiLinkClicked
@@ -153,9 +154,12 @@ class NavigationActionsMixin:
         """
         self._refresh_file_panel()
 
-        widget = self._get_focus_widget("content-panel")
-        if widget:
-            widget.focus()
+        # Back to whichever panel drives the Files list.
+        tag_list = self.query_one("#tag-list", TagList)
+        if tag_list.active_source == "tags":
+            tag_list.all_tags_list_view.focus()
+        else:
+            tag_list.directory_tree.focus()
 
     def action_help(self) -> None:
         """Show help information."""

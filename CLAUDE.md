@@ -26,10 +26,12 @@ src/librarian/
 └── widgets/
     ├── __init__.py
     ├── banner.py        # Custom ASCII art banner replacing default Textual Header
-    ├── tag_list.py      # Switchable content panel (Tags/Folders/Calendar, top) + Tools menu (bottom)
+    ├── tag_list.py      # Three-panel sidebar: Folders (top) + All Tags (middle) + Tools (bottom)
     ├── file_list.py     # Files for the selected folder or tag (ListView + search/navigation modes)
     ├── file_info.py     # RenameModal, MoveModal, and AssociateModal for file operations
     ├── calendar_list.py # Calendar meeting list widget
+    ├── calendar_modal.py # Modal hosting CalendarList + its own Preview over the right panels
+    ├── reminders_modal.py # Modal hosting remtui's RemindersPanel over the right panels
     └── preview.py       # Markdown preview pane (VerticalScroll + Markdown)
 ```
 
@@ -45,9 +47,9 @@ src/librarian/
   and link anchor becomes a tag — that alone accounted for 53 of 55 tags in a real vault. Matches
   Obsidian's rules, so the two tag lists agree
 - **Auto-refresh**: watchdog monitors scan directory with debouncing
-- **Folder-first sidebar**: Content panel (Folders/Tags/Calendar) on top, Tools menu below. Opens on Folders — see `DEFAULT_TOOL` in `widgets/tag_list.py`
+- **Three-panel sidebar**: Folders, All Tags, and Tools are all visible at once — the folder tree is for browsing, while a tag like `#meetings` acts as a shortcut list to frequently used notes, so neither should hide the other. Startup focus is the folder tree; see `DEFAULT_SOURCE` in `widgets/tag_list.py`
 - **Optional tools**: every tool needing a third-party program (TaskPaper, Reminders, Calendar) is opt-in via `[tools]`. Hiding a tool withholds its UI entry points only — the code stays live, so `.taskpaper` files keep being indexed, previewed, exported, and edited
-- **Launcher tools**: TaskPaper and Reminders hand off to an external program rather than switching the content panel — see `LAUNCHER_TOOLS` in `widgets/tag_list.py`
+- **Tools are launchers, not panels**: with Folders and Tags permanently on screen, every tool either hands off to an external program (TaskPaper) or opens a modal over the two right-hand panels (Reminders, Calendar) — see `LAUNCHER_TOOLS` in `widgets/tag_list.py`
 - **Wiki links**: `[[note.md]]` or `[[note|display text]]` syntax, preprocessed to `wikilink:` scheme
 - **Export**: HTML export with configurable output directory (sanitized output)
 - **Banner**: Compact 3-row header (`widgets/banner.py`) — a robot mark echoing the `md-robot` folder glyph, a letter-spaced title, and the tagline. `Text(no_wrap=True)` keeps a narrow terminal from making it taller
@@ -75,18 +77,25 @@ Denormalized structure with tags inline per file. Only files containing at least
 
 ## UI Layout
 
-The app has four panels:
-- **Left sidebar** (25% width): switchable content panel (50% height) on top, Tools menu (50% height) below
-  - Content panel switches between: Folders (DirectoryTree), All Tags (ListView), Calendar (CalendarList)
-  - Tools menu: Tags and Folders always; TaskPaper, Reminders, and Calendar when enabled in config
+The app has five panels — three down the left, two on the right:
+- **Left sidebar** (25% width), all three always visible:
+  - **Folders** (`2fr`): DirectoryTree of the scan directory
+  - **All Tags** (`1fr`): every indexed tag with its file count
+  - **Tools** (`height: auto`, capped at 40%): only the tools enabled in `[tools]`, so the panel
+    collapses to its header when none are — and is skipped in the Tab cycle when empty
 - **Right top** (33% height): File list — the selected folder's files in folder view, the selected tag's files otherwise
 - **Right bottom** (67% height): Markdown preview
 
 Layout uses percentage-based CSS for dynamic terminal resizing.
 
+### Active source
+Folders and Tags are both on screen, so "which one is the Files panel showing?" is state in its own
+right: `TagList.active_source` (`"folders"` or `"tags"`), set by moving the tree cursor or selecting
+a tag. It is not the same idea as the old `active_tool` — tools no longer own the content area.
+
 ### Folder view
-With the Folders tool active, the Files panel follows the folder tree cursor: moving onto a folder
-lists that folder's files. Two deliberate choices:
+With `active_source == "folders"`, the Files panel follows the folder tree cursor: moving onto a
+folder lists that folder's files. Two deliberate choices:
 
 - **Direct children only** — descendants are not included, matching Notebook Navigator's own
   `includeDescendantNotes = false`. Purely organizational folders therefore show an empty panel.
@@ -94,7 +103,7 @@ lists that folder's files. Two deliberate choices:
   files carrying at least one hashtag, so a folder-organized vault would look nearly empty if
   listed from there.
 
-`LibrarianApp._refresh_file_panel()` dispatches on `active_tool`, so an index update (background
+`LibrarianApp._refresh_file_panel()` dispatches on `active_source`, so an index update (background
 scan or file watcher) refreshes the folder listing rather than replacing it with a tag's files.
 
 ## Common Development Tasks
@@ -135,15 +144,22 @@ cat \$(uv run python -c "from librarian.config import Config; print(Config.load(
 
 ## Widget Communication
 
-- `TagList` contains the content panel (DirectoryTree, All Tags ListView, CalendarList) and the Tools ListView
-  - Tracks `active_tool` property (`"folders"`, `"tags"`, `"taskpaper"`, `"calendar"`)
-  - Emits `TagSelected` when a tag is selected
-  - Emits `FolderHighlighted` when the folder tree cursor moves to a folder
+- `TagList` contains three sibling panels: `#folders-panel` (DirectoryTree), `#tags-panel` (All Tags
+  ListView), and `#tools-panel` (Tools ListView)
+  - Tracks `active_source` (`"folders"` or `"tags"`) — which panel the Files panel is following
+  - Emits `TagSelected` when a tag is selected (sets `active_source = "tags"`)
+  - Emits `FolderHighlighted` when the folder tree cursor moves to a folder (sets it to `"folders"`)
   - Emits `FileSelected` when a file is selected in folder browser
-  - Emits `ToolLaunched` for launcher tools (TaskPaper, Reminders), which run an external program
-    instead of switching the content panel — `active_tool` and the visible panel are left alone
-  - `_switch_panel()` republishes the active selection so the Files panel follows the tool
-  - `initialize_default_tool()` syncs the menu highlight and content panel at startup without taking focus
+  - Emits `ToolLaunched` for every tool — each either runs an external program (TaskPaper) or opens a
+    modal (Reminders, Calendar). Neither touches `active_source`, so the Files panel keeps showing
+    what it was showing when the modal closes
+  - `initialize()` focuses the folder tree and publishes the root folder's files at startup
+- `CalendarModal` (in `calendar_modal.py`) frames `CalendarList` plus **its own** `Preview` over the
+  two right-hand panels — it covers the main preview, so it cannot borrow it. `q`/`escape` close it;
+  `a`, `n`, and `e` forward to the app's actions
+- `RemindersModal` (in `reminders_modal.py`) frames remtui's `RemindersPanel` the same way. Both bind
+  `q` with `priority=True`: the hosted panel binds `q` to `app.quit`, so without the priority
+  binding closing the modal would quit Librarian
 - `FileList` emits `FileHighlighted` when cursor moves (updates preview)
 - `Preview` receives file paths via `show_file()` async method, scrollable when focused
 - `AssociateModal` (in `file_info.py`) presents a list of `#meetings`-tagged files for linking to a calendar event; returns the selected `Path` or `None`
@@ -152,13 +168,16 @@ cat \$(uv run python -c "from librarian.config import Config; print(Config.load(
 
 ## Keyboard Navigation
 
-Tab cycles through panels in clockwise order:
-1. Content panel (top-left) — resolves to the active tool's view (Folders/Tags/Calendar)
-2. Files (top-right)
-3. Preview (bottom-right)
-4. Tools (bottom-left)
+Tab goes down the left column, then down the right:
+1. Folders (top-left)
+2. All Tags (middle-left)
+3. Tools (bottom-left) — **skipped when no tools are enabled**, since the panel is then empty
+4. Files (top-right)
+5. Preview (bottom-right)
 
-Custom focus order is defined in `LibrarianApp.FOCUS_ORDER` with overridden `action_focus_next`/`action_focus_previous` methods.
+Custom focus order is defined in `LibrarianApp.FOCUS_ORDER`, with `action_focus_next`/
+`action_focus_previous` delegating to `_focus_step()`, which walks past any stop whose lookup
+returns `None`.
 
 Key bindings:
 - `s` - Search files and tags
@@ -180,8 +199,11 @@ Key bindings:
 - Widgets inherit from `Vertical` container (not `Static`)
 - ListViews use `height: 1fr` to fill available space within their sections
 - Headers use fixed `height: 1`
-- TagList: content panel and Tools list each at `height: 1fr` (50/50)
-- Content panel sections toggled via CSS `hidden` class
+- TagList: Folders `2fr`, All Tags `1fr`, Tools `height: auto` with `max-height: 40%` — the auto
+  height lets the Tools panel shrink to its header when no tools are enabled, giving the space back
+  to the folder tree
+- Each sidebar panel carries its own border color: Folders `$success`, All Tags `$primary`,
+  Tools `$accent`
 - Banner widget has fixed `height: 3` with `width: 100%`; `ROBOT_ROWS` must stay 3 rows of equal, single-cell width or the text column shifts between lines
 - Per-panel border colors with `:focus-within` for active indication:
   - `#tag-list`: `$accent` / `cyan` when focused
@@ -243,7 +265,11 @@ class Config:
 
 - **Background scanning**: Initial scan runs in background worker, UI loads immediately with cached index
 - **Batched writes**: `batch_writes()` context manager defers JSON saves until batch completes
-- **Batched watcher updates**: File watcher batches multiple file changes into single index write
+- **Batched watcher updates**: File watcher batches multiple file changes into single index write.
+  The debounce is a `threading.Timer`, so `FileWatcher.stop()` calls `MarkdownEventHandler.cancel()`
+  to discard anything still in the window — otherwise a file saved just before quit gets rescanned
+  against a torn-down database. `LibrarianApp._handle_file_change()` swallows `NoMatches` for the
+  same reason, from the other end
 - **Targeted rescan**: Rename/move operations update only affected files, not full directory scan
 - **Thread-safe writes**: Index writes protected by threading lock to prevent corruption
 - **Incremental UI updates**: Tag list updates only changed items, preserves cursor position
@@ -344,7 +370,12 @@ icalpal_path = ""      # empty = auto-detect
 - `calendar.py`: Wraps icalPal subprocess, parses JSON output, 5-minute TTL cache
 - `calendar_store.py`: Sidecar JSON at `{data_directory}/calendar_associations.json` for event-to-file mapping
 - `widgets/calendar_list.py`: `CalendarList` widget with `MeetingItem` list items
+- `widgets/calendar_modal.py`: `CalendarModal` — the meeting list plus a dedicated `Preview`, over
+  the Files and Preview panels
 - `widgets/file_info.py`: `AssociateModal` - modal screen listing `#meetings`-tagged files for event-to-file association
+- `actions/calendar_actions.py`: `action_open_calendar()` (gated on `[tools] calendar`) and the
+  `_calendar_list()`/`_calendar_preview()` lookups the meeting handlers use, which return `None` when
+  the modal is closed
 
 ### Failures vs empty days
 `fetch_todays_events()` raises `CalendarError` rather than returning `[]` when anything goes wrong,
@@ -378,11 +409,12 @@ fallback is not — sorting a mix of aware and naive datetimes raises `TypeError
 rather than false, since icalPal writes explicit nulls for fields that don't apply.
 
 ### User Experience
-1. Select "Calendar" in Tools → shows today's meetings
-2. Navigate meetings → preview shows associated note or meeting info
+1. Select "Calendar" in Tools → a modal opens over the right-hand panels with today's meetings
+2. Navigate meetings → the modal's preview shows the associated note or the meeting details
 3. Press `a` → pick from `#meetings` tagged files to associate
 4. Press `n` → create meeting note template (auto-associated, includes `#meetings` tag)
 5. Press `e` → edit associated note
+6. Press `q` or `escape` → close, returning to whatever the Files panel was showing
 
 ### Association Storage
 ```json

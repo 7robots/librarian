@@ -216,13 +216,13 @@ class TestLaunching:
             monkeypatch.setattr(app, "suspend", FakeSuspend())
 
             tag_list = app.query_one(TagList)
-            before = tag_list.active_tool
+            before = tag_list.active_source
 
             app.action_launch_reminders()
             await pilot.pause()
 
-            assert tag_list.active_tool == before == "folders"
-            assert not tag_list.query_one("#folders-section").has_class("hidden")
+            assert tag_list.active_source == before == "folders"
+            assert tag_list.directory_tree.display
 
 
 class TestOptionalTools:
@@ -243,16 +243,15 @@ class TestOptionalTools:
         return LibrarianApp(config)
 
     async def test_all_optional_tools_hidden_by_default(self, config, tmp_index):
-        """Only the tools needing no third-party program are shown."""
+        """Every tool needs a third-party program, so the menu starts empty."""
         app = self.app_with(config)
-        async with app.run_test(size=(100, 30)) as pilot:
-            assert await self.menu_names(app, pilot) == ["Tags", "Folders"]
+        async with app.run_test(size=(100, 40)) as pilot:
+            assert await self.menu_names(app, pilot) == []
 
     async def test_only_calendar(self, config, tmp_index):
         app = self.app_with(config, calendar=True)
-        async with app.run_test(size=(100, 30)) as pilot:
-            names = await self.menu_names(app, pilot)
-            assert names == ["Tags", "Folders", "Calendar"]
+        async with app.run_test(size=(100, 40)) as pilot:
+            assert await self.menu_names(app, pilot) == ["Calendar"]
 
     async def test_only_taskpaper(self, config, tmp_index):
         app = self.app_with(config, taskpaper=True)
@@ -293,12 +292,12 @@ class TestDisabledToolsAreUnreachable:
 
     async def test_taskpaper_action_is_inert(self, config, tmp_index):
         app = self.app_with(config)
-        async with app.run_test(size=(100, 30)) as pilot:
+        async with app.run_test(size=(100, 40)) as pilot:
             await pilot.pause()
             app.action_launch_taskpaper()
             await pilot.pause()
 
-            assert app.query_one(TagList).active_tool == "folders"
+            assert app.query_one(TagList).active_source == "folders"
             assert any("TaskPaper is off" in n.message for n in app._notifications)
 
     async def test_reminders_action_is_inert(self, config, tmp_index, monkeypatch):
@@ -332,18 +331,17 @@ class TestDisabledToolsAreUnreachable:
             # but it must reach that code path rather than being gated out.
             assert not any("TaskPaper is off" in n.message for n in app._notifications)
 
-    async def test_calendar_panel_explains_it_is_off(self, config, tmp_index):
-        """The panel is unreachable from the menu, but the fetch guard still holds."""
+    async def test_calendar_action_explains_it_is_off(self, config, tmp_index):
+        """The menu entry is hidden, and the action refuses with the config key."""
         app = self.app_with(config)
-        async with app.run_test(size=(100, 30)) as pilot:
-            await pilot.pause()
-            tag_list = app.query_one(TagList)
-
-            app._fetch_calendar_events()
+        async with app.run_test(size=(100, 40)) as pilot:
             await pilot.pause()
 
-            status = str(tag_list.calendar_list.status_label.render())
-            assert "Calendar is off" in status
+            app.action_open_calendar()
+            await pilot.pause()
+
+            assert any("Calendar is off" in n.message for n in app._notifications)
+            assert type(app.screen).__name__ != "CalendarModal"
 
     async def test_help_omits_shortcuts_for_hidden_tools(self, config, tmp_index):
         app = self.app_with(config)

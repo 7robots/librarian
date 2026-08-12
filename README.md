@@ -8,28 +8,31 @@ of an Obsidian vault or any plain folder of markdown.
 ```
  ●    L I B R A R I A N
 ╢● ●╟  Terminal Notes & Tasks  │  github.com/7robots/librarian
-┌──────────────┬──────────────────────────────────────────────┐
-│ FOLDERS      │ FILES (techne/)                              │
-│              │                                              │
-│ ▾ vault      │ > Claude Notes.md                            │
-│   anthologia │   CLI Dev Environment Setup.md               │
-│   kybernetes │   Terminal Tools.md                          │
-│   techne     ├──────────────────────────────────────────────┤
-│              │ PREVIEW - Claude Notes.md                    │
-├──────────────┤                                              │
-│ ★ TOOLS      │ # Claude Notes                               │
-│              │                                              │
-│   Tags       │ Working notes on the CLI. #arete             │
-│ > Folders    │                                              │
-│   Calendar   │                                              │
-└──────────────┴──────────────────────────────────────────────┘
+┌───────────────┬─────────────────────────────────────────────┐
+│ FOLDERS       │ FILES (techne/)                             │
+│               │                                             │
+│ ▾ vault       │ > Claude Notes.md                           │
+│   anthologia  │   CLI Dev Environment Setup.md              │
+│   kybernetes  │   Terminal Tools.md                         │
+│   techne      │                                             │
+├───────────────┼─────────────────────────────────────────────┤
+│ ALL TAGS      │ PREVIEW - Claude Notes.md                   │
+│ #arete (66)   │                                             │
+│ #meetings (9) │ # Claude Notes                              │
+├───────────────┤                                             │
+│ ★ TOOLS       │ Working notes on the CLI. #arete            │
+│ Reminders     │                                             │
+│ Calendar      │                                             │
+└───────────────┴─────────────────────────────────────────────┘
 ```
 
 ## Features
 
 - **Folder-first browsing** — the folder tree leads, and the file list follows the cursor
 - **Live preview** — markdown (and taskpaper) rendered as you move
-- **Tags** — inline `#hashtags` indexed across the vault, with a tag view when you want it
+- **Folders and tags side by side** — the tree for browsing, the tag list as shortcuts to the notes
+  you keep coming back to; the file list follows whichever you touched last
+- **Tags** — inline `#hashtags` indexed across the vault
 - **Search** — files and tags by partial match
 - **Wiki links** — click `[[note.md]]` in the preview to navigate, `Escape` to come back
 - **File management** — create, rename, move, delete, and export to HTML
@@ -143,10 +146,11 @@ calendar_name = ""     # empty = all calendars
 icalpal_path = ""      # empty = find icalPal on PATH
 ```
 
-Select **Calendar** to see today's meetings. Navigate them to preview a linked note or the meeting's
-own details; press `a` to link a meeting to an existing `#meetings` file, or `n` to create a meeting
-note from a template. When icalPal cannot run, the panel says why — it will not quietly show you an
-empty day.
+Select **Calendar** and today's meetings open as a panel over the Files and Preview panels, with your
+folder tree and tag list still visible; `q` closes it. Navigate the meetings to preview a linked note
+or the meeting's own details; press `a` to link a meeting to an existing `#meetings` file, or `n` to
+create a meeting note from a template. When icalPal cannot run, the panel says why — it will not
+quietly show you an empty day.
 
 ### Reminders (remtui)
 
@@ -158,7 +162,7 @@ reminders = ""   # or a path; empty finds "remtui" on PATH
 ```
 
 Select **Reminders** and the reminders list opens as a panel over the Files and Preview panels, with
-your folder tree and Tools menu still visible; `q` closes it. That needs remtui installed as a
+your folder tree and tag list still visible; `q` closes it. That needs remtui installed as a
 Python package:
 
 ```bash
@@ -198,13 +202,14 @@ Adds a TaskPaper tool that filters to the `#taskpaper` tag and creates `.taskpap
 | `u` | Rescan files |
 | `t` | TaskPaper tool (when enabled) |
 | `a` | Link a meeting to a note (Calendar tool) |
-| `Tab` / `Shift+Tab` | Cycle panels clockwise / counter-clockwise |
+| `Tab` / `Shift+Tab` | Cycle panels forward / backward |
 | `↑/↓` | Navigate lists, scroll the preview |
 | `Enter` | Select |
 | `Escape` | Back from a wiki link, or out of search |
 | `?` | Show help |
 
-Tab order runs clockwise from the top-left: content panel → files → preview → tools.
+Tab goes down the left column and then down the right: folders → tags → tools → files → preview. With
+no tools enabled the Tools panel is empty, so Tab skips it.
 
 ## Tags
 

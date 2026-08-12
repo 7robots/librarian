@@ -97,13 +97,13 @@ class LibrarianApp(
         Binding("escape", "go_back", "Back", show=False),
     ]
 
-    # Custom focus order, clockwise from the top-left panel:
-    # content (folders/tags/calendar) -> files -> preview -> tools
+    # Focus order: down the left column, then down the right.
     FOCUS_ORDER = [
-        "content-panel",
+        "directory-tree",
+        "all-tags-list-view",
+        "tools-list-view",
         "file-list-view",
         "preview",
-        "tools-list-view",
     ]
 
     def __init__(self, config: Config) -> None:
@@ -142,7 +142,7 @@ class LibrarianApp(
         self._refresh_tags()
 
         tag_list = self.query_one("#tag-list", TagList)
-        tag_list.initialize_default_tool()
+        tag_list.initialize()
 
         self._watcher = FileWatcher(self.config, self._on_file_change)
         self._watcher.start()
@@ -176,8 +176,9 @@ class LibrarianApp(
                 # Show why in the panel, so a broken icalPal is never mistaken
                 # for a day with no meetings.
                 message = str(event.worker.error) or "Calendar fetch failed"
-                tag_list = self.query_one("#tag-list", TagList)
-                tag_list.calendar_list.show_error(message)
+                calendar_list = self._calendar_list()
+                if calendar_list is not None:
+                    calendar_list.show_error(message)
                 self.notify(message, severity="error", timeout=8)
             return
 
@@ -204,8 +205,9 @@ class LibrarianApp(
         elif worker_name == "_fetch_calendar":
             result = event.worker.result
             if result is not None:
-                tag_list = self.query_one("#tag-list", TagList)
-                tag_list.calendar_list.update_events(result)
+                calendar_list = self._calendar_list()
+                if calendar_list is not None:
+                    calendar_list.update_events(result)
 
         elif worker_name == "_load_preview":
             file_path = self._pending_preview_path
@@ -229,8 +231,7 @@ class LibrarianApp(
     def on_app_focus(self) -> None:
         """Handle app regaining focus — invalidate calendar cache."""
         clear_calendar_cache()
-        tag_list = self.query_one("#tag-list", TagList)
-        if tag_list.active_tool == "calendar":
+        if self._calendar_list() is not None:
             self._fetch_calendar_events()
 
     async def on_unmount(self) -> None:
@@ -249,9 +250,18 @@ class LibrarianApp(
         self.call_from_thread(self._handle_file_change)
 
     def _handle_file_change(self) -> None:
-        """Handle file changes on the main thread."""
-        self._refresh_tags()
-        self._refresh_file_panel()
+        """Handle file changes on the main thread.
+
+        The watcher lives in its own thread and debounces, so a change can land
+        after the panels are gone -- a file written just before quit is enough.
+        Missing widgets mean the app is going away, so there is nothing to
+        refresh.
+        """
+        try:
+            self._refresh_tags()
+            self._refresh_file_panel()
+        except NoMatches:
+            return
         self.notify("Index updated")
 
     def _refresh_file_panel(self) -> None:
@@ -267,7 +277,7 @@ class LibrarianApp(
         if file_list.is_search_mode() or file_list.is_navigation_mode():
             return
 
-        if tag_list.active_tool == "folders":
+        if tag_list.active_source == "folders":
             folder = tag_list.get_selected_folder()
             if folder is not None:
                 self.call_later(self._show_folder_files, folder)
@@ -342,8 +352,7 @@ class LibrarianApp(
     def _select_taskpaper_tag(self) -> None:
         """Select the #taskpaper tag and show its files."""
         tag_list = self.query_one("#tag-list", TagList)
-        tag_list._switch_panel("tags")
-        tag_list.active_tool = "taskpaper"
+        tag_list.active_source = "tags"
 
         all_list = tag_list.all_tags_list_view
         for i, item in enumerate(all_list.children):
@@ -371,6 +380,8 @@ class LibrarianApp(
             self._select_taskpaper_tag()
         elif event.tool_name == "reminders":
             self.action_launch_reminders()
+        elif event.tool_name == "calendar":
+            self.action_open_calendar()
 
     async def on_tag_list_folder_highlighted(
         self, event: TagList.FolderHighlighted

@@ -127,14 +127,14 @@ class TestClosing:
         async with app.run_test(size=(120, 38)) as pilot:
             await pilot.pause()
             tag_list = app.query_one(TagList)
-            before = tag_list.active_tool
+            before = tag_list.active_source
 
             await open_panel(app, pilot, tmp_path, monkeypatch)
             await pilot.press("q")
             await pilot.pause()
 
-            assert tag_list.active_tool == before == "folders"
-            assert not tag_list.query_one("#folders-section").has_class("hidden")
+            assert tag_list.active_source == before == "folders"
+            assert tag_list.directory_tree.display
 
 
 class TestKeyIsolation:
