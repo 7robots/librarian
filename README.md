@@ -1,9 +1,9 @@
 # Librarian
 
 **Terminal Notes & Tasks.** Librarian browses a folder of markdown notes from the terminal — folder
-tree, file list, live preview — with optional tools for tags, Apple Reminders, and today's meetings.
-It reads an existing directory of files and never takes ownership of them, so it sits happily on top
-of an Obsidian vault or any plain folder of markdown.
+tree, file list, live preview — with optional tools for Apple Reminders, today's meetings, and
+Smartsheet projects. It reads an existing directory of files and never takes ownership of them, so
+it sits happily on top of an Obsidian vault or any plain folder of markdown.
 
 ```
  ●    L I B R A R I A N
@@ -38,7 +38,8 @@ of an Obsidian vault or any plain folder of markdown.
 - **File management** — create, rename, move, delete, and export to HTML
 - **Auto-refresh** — a file watcher keeps the index current
 - **Folder icons and colors** — per-folder, from your config or mirrored from Obsidian
-- **Optional tools** — Apple Reminders, today's meetings, and TaskPaper, each opt-in
+- **Optional tools** — Apple Reminders, today's meetings, Smartsheet projects, and TaskPaper,
+  each opt-in
 
 ## Installation
 
@@ -78,13 +79,14 @@ nothing breaks if you never install any of them.
 | [Obsidian Notebook Navigator](https://github.com/johansan/notebook-navigator) | the plugin, in a vault | Folder icons and colors mirrored from Obsidian |
 | [icalPal](https://github.com/ajrosen/icalPal) | `brew tap ajrosen/tap && brew install icalPal` | Today's meetings, linkable to notes |
 | [remtui](https://github.com/7robots/remtui) | remtui + [remctl](https://github.com/viticci/remctl) | Apple Reminders, in a full-screen handoff |
+| [projection](https://github.com/7robots/projection) | projection (private repo) + a Smartsheet token | Smartsheet projects, in a panel |
 | A TaskPaper TUI | any `.taskpaper` editor on your PATH | A `.taskpaper` view, and `e` opening it in that editor |
 
 ### Why they are opt-in
 
 A menu entry for a tool whose program is missing is worse than no entry: you select it, nothing
-useful happens, and you cannot tell whether the tool or your setup is broken. So the three tools
-that shell out to another program are off by default, and turning one on is a statement that you
+useful happens, and you cannot tell whether the tool or your setup is broken. So every tool
+that leans on another program is off by default, and turning one on is a statement that you
 have it installed.
 
 ```toml
@@ -92,6 +94,7 @@ have it installed.
 taskpaper = false   # file-based tasks, via taskpapertui
 reminders = false   # Apple Reminders, via remtui
 calendar = false    # today's meetings, via icalPal
+projects = false    # Smartsheet projects, via projection
 ```
 
 Disabling a tool hides **all** of its entry points — the menu row, its keybinding, and its line in
@@ -186,6 +189,30 @@ taskpaper = "taskpapertui"   # empty = use `editor` instead
 
 Adds a TaskPaper tool that filters to the `#taskpaper` tag and creates `.taskpaper` files, and makes
 `e` open them in your taskpaper editor rather than `editor`.
+
+### Projects (projection)
+
+```toml
+[tools]
+projects = true
+
+projects = ""   # or a path; empty finds "projection" on PATH
+```
+
+Select **Projects** and [projection](https://github.com/7robots/projection) opens as a panel over the
+Files and Preview panels, the same way Reminders does; `q` closes it.
+
+Unlike remtui, projection is **not** declared as an optional dependency — its repository is private,
+so `uv sync --extra ...` would fail for anyone without access. Install it by hand instead:
+
+```bash
+uv pip install -e /path/to/projection
+```
+
+Note that `uv sync` and `./install.sh` drop it again, since it is not in the lockfile. Without the
+package, Librarian falls back to suspending and running the `projection` executable.
+
+Projects live in Smartsheet rather than in files, so nothing here touches your notes or the index.
 
 ## Keybindings
 

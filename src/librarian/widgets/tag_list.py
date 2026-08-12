@@ -20,7 +20,7 @@ MAX_DISPLAY_TAGS = 200
 # Every tool Librarian knows about, in display order. Folders and Tags are no
 # longer here: they have permanent panels of their own, so everything in the
 # Tools menu now launches something.
-ALL_TOOLS = ("TaskPaper", "Reminders", "Calendar")
+ALL_TOOLS = ("TaskPaper", "Reminders", "Calendar", "Projects")
 
 # Tools hidden unless enabled in config. The code behind them stays live; only
 # the menu entry is withheld.
@@ -31,7 +31,7 @@ OPTIONAL_TOOLS = ALL_TOOLS
 DEFAULT_TOOLS: tuple[str, ...] = ()
 
 # Every tool now launches something rather than switching a panel.
-LAUNCHER_TOOLS = ("taskpaper", "reminders", "calendar")
+LAUNCHER_TOOLS = ("taskpaper", "reminders", "calendar", "projects")
 
 # Which panel drives the Files list at startup. Folders leads because content is
 # organized by folder; tags are a shortcut list alongside it.

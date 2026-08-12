@@ -5,26 +5,12 @@ rather than scattering it across READMEs or issue comments.
 
 ## Planned
 
-### Embed projection as a Projects tool
-Add [projection](https://github.com/7robots/projection) as the fourth optional tool, with the same
-experience as Reminders: a panel over the Files and Preview panels, `q` to close, falling back to
-running it as an external program.
+### Publish or vendor projection so the Projects panel can be installed
+The Projects tool is **built and working** — `ProjectsModal`, `[tools] projects`, the soft import,
+and the suspend-and-launch fallback all ship, with the embed verified against projection's own fakes.
+What is missing is a way for anyone to *install* it.
 
-**Done on projection's side.** It now exposes `projection.panel.ProjectsPanel` — a widget with scoped
-`DEFAULT_CSS`, the same shape as remtui's — with the package renamed from `tui` to `projection`, the
-`q -> app.quit` fix, Textual pinned to 8.2.8, and `install.sh` matching the other three.
-
-**Left to do in Librarian**, mirroring `widgets/reminders_modal.py`:
-
-- A `ProjectsModal` framing `ProjectsPanel` over the Files and Preview panels, with `q` bound
-  `priority=True` to close — without that, `q` reaches the panel's `app.quit` and closes Librarian.
-- A `[tools] projection` flag, off by default, and a `Projects` entry in `ALL_TOOLS`.
-- A soft import so Librarian still runs without projection installed, with the existing
-  suspend-and-launch handoff (`~/bin/projection`) as the fallback.
-- Tests using the same fakes projection's own suite uses (`FakeClient`, `FakeSync`), skipped via
-  `importorskip`.
-
-**The dependency is deferred.** The optional extra would be:
+The optional extra would be:
 
 ```toml
 [project.optional-dependencies]
@@ -32,11 +18,36 @@ projects = ["projection @ git+https://github.com/7robots/projection.git ; python
 ```
 
 but that repository is **private**, so declaring it in a public project means `uv sync --extra
-projects` fails for anyone without access — unlike remtui, which is public. Options when we pick this
-up: leave the extra undeclared and document installing it by hand, publish projection, or split its
-panel into a public package. Two further wrinkles: it reads a Smartsheet token from 1Password
-(`op read`, which can block on Touch ID), so the panel must load it on open rather than at startup and
-degrade to a message; and it talks to Smartsheet over httpx, so it needs to behave offline.
+projects` fails for anyone without access — unlike remtui, which is public. So it is deliberately
+*not* declared, and `uv pip install -e ~/GitHub/projection` installs it by hand. The cost of that
+choice: `uv sync` and `./install.sh` both drop the package again, since it is not in the lockfile.
+
+Options: publish projection, split its panel into a public package, or keep it manual and accept the
+re-install step. Note the two wrinkles that prompted this are now settled — `SmartsheetClient` loads
+its 1Password token lazily on the first request, so constructing it cannot block or prompt for Touch
+ID at startup, and the panel degrades to a message when Smartsheet is unreachable.
+
+### Rethink what `q` means inside an embedded panel
+**Needs a design conversation before any code.** Right now `q` is overloaded and the behavior reads
+as inconsistent depending on which panel is open:
+
+| Where | `q` does | Why |
+|---|---|---|
+| Librarian's own panels | quits Librarian | app-level binding |
+| Calendar modal | closes the modal | screen binding, checked before the app |
+| Reminders modal | closes the modal | screen binding with `priority=True`, because remtui's panel binds `q -> app.quit` |
+| remtui / projection standalone | quits that app | their own app-level binding |
+
+So the same key means "quit the program" in one place and "back out one level" in another, and which
+one you get depends on a detail — whether the embedded widget happens to claim `q` — that is
+invisible from the outside. Escape is inconsistent too: the calendar modal binds it, the reminders
+modal deliberately does not, because remtui's filter owns it.
+
+Options worth weighing: make `q` uniformly "close the innermost thing" and move quit to `ctrl+q`;
+keep `q` as quit and use only Escape to close modals; or have the host rewrite the embedded panel's
+quit binding on mount so hosted panels never define the meaning. Whatever we pick should also settle
+what happens to the *host's* keys while a panel is open — a `ModalScreen` currently hides all of
+them, which is why `a`/`n`/`e` are re-declared on the calendar modal by hand.
 
 ### De-duplicate the taskpaper → markdown conversion
 `librarian/taskpaper.py` and `taskpapertui/widgets/preview.py` hold the same conversion, differing

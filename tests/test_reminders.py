@@ -268,17 +268,29 @@ class TestOptionalTools:
             assert "TaskPaper" not in names
 
     async def test_all_enabled(self, config, tmp_index):
-        app = self.app_with(config, taskpaper=True, reminders=True, calendar=True)
+        app = self.app_with(
+            config, taskpaper=True, reminders=True, calendar=True, projects=True
+        )
         async with app.run_test(size=(100, 30)) as pilot:
             assert await self.menu_names(app, pilot) == list(ALL_TOOLS)
 
     async def test_menu_order_is_stable(self, config, tmp_index):
         """Enabling a tool inserts it in catalog order, not at the end."""
-        app = self.app_with(config, taskpaper=True, reminders=True, calendar=True)
+        app = self.app_with(
+            config, taskpaper=True, reminders=True, calendar=True, projects=True
+        )
         async with app.run_test(size=(100, 30)) as pilot:
             names = await self.menu_names(app, pilot)
             assert names.index("TaskPaper") < names.index("Reminders")
             assert names.index("Reminders") < names.index("Calendar")
+            assert names.index("Calendar") < names.index("Projects")
+
+    async def test_enabling_only_projects_shows_only_projects(
+        self, config, tmp_index
+    ):
+        app = self.app_with(config, projects=True)
+        async with app.run_test(size=(100, 30)) as pilot:
+            assert await self.menu_names(app, pilot) == ["Projects"]
 
 
 class TestDisabledToolsAreUnreachable:

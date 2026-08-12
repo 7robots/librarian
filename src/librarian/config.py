@@ -66,8 +66,8 @@ class ToolsConfig:
     """Which optional tools appear in the Tools menu.
 
     Every optional tool depends on a third-party program Librarian does not
-    bundle -- taskpapertui, remtui, icalPal -- so all are off by default and
-    turned on deliberately. Hiding a tool only removes its UI entry points; the
+    bundle -- taskpapertui, remtui, icalPal, projection -- so all are off by
+    default and turned on deliberately. Hiding a tool only removes its UI entry points; the
     code stays in place, so `.taskpaper` files keep being indexed, previewed,
     exported, and edited either way.
     """
@@ -75,6 +75,7 @@ class ToolsConfig:
     taskpaper: bool = False
     reminders: bool = False
     calendar: bool = False
+    projects: bool = False
 
     def is_enabled(self, tool_name: str) -> bool:
         """Whether a tool should be shown.
@@ -126,6 +127,7 @@ class Config:
     editor: str = "vim"
     taskpaper: str = ""
     reminders: str = ""
+    projects: str = ""
     tags: TagConfig = field(default_factory=TagConfig)
     export_directory: Path = field(default_factory=lambda: Path.home() / "Downloads")
     data_directory: Path = field(default_factory=get_default_data_dir)
@@ -172,6 +174,9 @@ class Config:
         # Parse reminders TUI path (remtui)
         reminders = data.get("reminders", "")
 
+        # Parse projects TUI path (projection)
+        projects = data.get("projects", "")
+
         # Parse tags config
         tags_data = data.get("tags", {})
         tags = TagConfig(
@@ -204,6 +209,7 @@ class Config:
             calendar=bool(
                 tools_data.get("calendar", cal_data.get("enabled", False))
             ),
+            projects=bool(tools_data.get("projects", False)),
         )
 
         # Parse icon rendering config
@@ -228,6 +234,7 @@ class Config:
             editor=editor,
             taskpaper=taskpaper,
             reminders=reminders,
+            projects=projects,
             tags=tags,
             export_directory=export_directory,
             data_directory=data_directory,
@@ -265,6 +272,9 @@ class Config:
             '# Reminders TUI executable (remtui); empty = look for "remtui" on PATH',
             f'reminders = "{self.reminders}"',
             '',
+            '# Projects TUI executable (projection); empty = look for "projection" on PATH',
+            f'projects = "{self.projects}"',
+            '',
             '# Directory for exported files (PDF/HTML)',
             f'export_directory = "{self.export_directory}"',
             '',
@@ -286,12 +296,13 @@ class Config:
         lines.extend([
             '',
             '# Optional tools shown in the Tools menu. Each needs a third-party',
-            '# program (taskpapertui, remtui, icalPal), so all are opt-in.',
+            '# program (taskpapertui, remtui, icalPal, projection), so all are opt-in.',
             '# Hiding one only hides its UI: .taskpaper files stay indexed.',
             '[tools]',
             f'taskpaper = {str(self.tools.taskpaper).lower()}',
             f'reminders = {str(self.tools.reminders).lower()}',
             f'calendar = {str(self.tools.calendar).lower()}',
+            f'projects = {str(self.tools.projects).lower()}',
             '',
             '# Folder icon glyphs: "auto" detects Nerd Font support, or force',
             '# "nerd" (tinted with the folder color) or "emoji" (works anywhere)',

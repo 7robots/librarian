@@ -205,11 +205,31 @@ class TestAppearanceConfig:
         self._write_config(
             tmp_path,
             monkeypatch,
-            "[tools]\ntaskpaper = true\nreminders = true\ncalendar = true\n",
+            "[tools]\ntaskpaper = true\nreminders = true\ncalendar = true\n"
+            "projects = true\n",
         )
         tools = Config.load().tools
 
-        assert (tools.taskpaper, tools.reminders, tools.calendar) == (True, True, True)
+        assert (tools.taskpaper, tools.reminders, tools.calendar, tools.projects) == (
+            True,
+            True,
+            True,
+            True,
+        )
+
+    def test_projects_defaults_off_and_round_trips(self, tmp_path, monkeypatch):
+        """save() writes the keys load() reads -- easy to break, silent when broken."""
+        self._write_config(tmp_path, monkeypatch, "")
+        assert Config.load().tools.projects is False
+
+        config = Config.load()
+        config.tools.projects = True
+        config.projects = "/opt/bin/projection"
+        config.save()
+
+        reloaded = Config.load()
+        assert reloaded.tools.projects is True
+        assert reloaded.projects == "/opt/bin/projection"
 
     def test_legacy_calendar_enabled_still_turns_the_tool_on(
         self, tmp_path, monkeypatch

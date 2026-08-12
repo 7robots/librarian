@@ -32,6 +32,7 @@ src/librarian/
     ├── calendar_list.py # Calendar meeting list widget
     ├── calendar_modal.py # Modal hosting CalendarList + its own Preview over the right panels
     ├── reminders_modal.py # Modal hosting remtui's RemindersPanel over the right panels
+    ├── projects_modal.py # Modal hosting projection's ProjectsPanel over the right panels
     └── preview.py       # Markdown preview pane (VerticalScroll + Markdown)
 ```
 
@@ -48,8 +49,8 @@ src/librarian/
   Obsidian's rules, so the two tag lists agree
 - **Auto-refresh**: watchdog monitors scan directory with debouncing
 - **Three-panel sidebar**: Folders, All Tags, and Tools are all visible at once — the folder tree is for browsing, while a tag like `#meetings` acts as a shortcut list to frequently used notes, so neither should hide the other. Startup focus is the folder tree; see `DEFAULT_SOURCE` in `widgets/tag_list.py`
-- **Optional tools**: every tool needing a third-party program (TaskPaper, Reminders, Calendar) is opt-in via `[tools]`. Hiding a tool withholds its UI entry points only — the code stays live, so `.taskpaper` files keep being indexed, previewed, exported, and edited
-- **Tools are launchers, not panels**: with Folders and Tags permanently on screen, every tool either hands off to an external program (TaskPaper) or opens a modal over the two right-hand panels (Reminders, Calendar) — see `LAUNCHER_TOOLS` in `widgets/tag_list.py`
+- **Optional tools**: every tool needing a third-party program (TaskPaper, Reminders, Calendar, Projects) is opt-in via `[tools]`. Hiding a tool withholds its UI entry points only — the code stays live, so `.taskpaper` files keep being indexed, previewed, exported, and edited
+- **Tools are launchers, not panels**: with Folders and Tags permanently on screen, every tool either hands off to an external program (TaskPaper) or opens a modal over the two right-hand panels (Reminders, Calendar, Projects) — see `LAUNCHER_TOOLS` in `widgets/tag_list.py`
 - **Wiki links**: `[[note.md]]` or `[[note|display text]]` syntax, preprocessed to `wikilink:` scheme
 - **Export**: HTML export with configurable output directory (sanitized output)
 - **Banner**: Compact 3-row header (`widgets/banner.py`) — a robot mark echoing the `md-robot` folder glyph, a letter-spaced title, and the tagline. `Text(no_wrap=True)` keeps a narrow terminal from making it taller
@@ -244,6 +245,7 @@ class ToolsConfig:
     taskpaper: bool = False   # show the TaskPaper tool (needs taskpapertui)
     reminders: bool = False   # show the Reminders tool (needs remtui)
     calendar: bool = False    # show the Calendar tool (needs icalPal)
+    projects: bool = False    # show the Projects tool (needs projection)
 
 @dataclass
 class Config:
@@ -251,6 +253,7 @@ class Config:
     editor: str
     taskpaper: str          # Path to taskpapertui executable (empty = use editor)
     reminders: str          # Path to remtui executable (empty = find "remtui" on PATH)
+    projects: str           # Path to projection executable (empty = find "projection" on PATH)
     tags: TagConfig
     export_directory: Path  # Default: ~/Downloads
     data_directory: Path    # Default: ~/.local/share/librarian
@@ -546,6 +549,7 @@ Every tool that depends on a program Librarian does not bundle is opt-in:
 taskpaper = false   # file-based tasks, via taskpapertui
 reminders = false   # Apple Reminders, via remtui
 calendar = false    # today's meetings, via icalPal
+projects = false    # Smartsheet projects, via projection
 ```
 
 All default to false, so a fresh install shows only Tags and Folders and never advertises a tool
@@ -613,6 +617,49 @@ Three things make the embed work:
 
 Tests use remtui's `fake_remctl.py` backend, so they never read or write real Reminders. They skip
 when remtui is not installed (`pytest.importorskip`).
+
+## Projects (projection)
+
+Selecting **Projects** opens [projection](https://github.com/7robots/projection) — a Textual TUI over
+a Smartsheet of Infrastructure Architecture projects — in a modal over the Files and Preview panels.
+Structurally identical to Reminders: `widgets/projects_modal.py` frames `projection.panel.ProjectsPanel`,
+`actions/projects_actions.py` prefers the embed and falls back to the executable.
+
+```toml
+[tools]
+projects = true
+
+projects = ""   # empty = find "projection" on PATH
+```
+
+### The dependency is deliberately undeclared
+remtui is public and ships as `uv sync --extra reminders`. projection's repository is **private**, so
+declaring the same kind of extra would make `uv sync --extra projects` fail for anyone without
+access. It is installed by hand instead:
+
+```bash
+uv pip install -e /path/to/projection
+```
+
+Consequence worth remembering: `uv sync` and `./install.sh` drop the package again, since it is not
+in the lockfile — re-run the `uv pip install` after either. The fallback is therefore the *common*
+path here, not a rare one. See `docs/ROADMAP.md` for the options.
+
+### `priority=True` on `q` is load-bearing here
+Unlike `CalendarModal`, where the flag is defensive, `ProjectsPanel` binds `q -> app.quit` itself and
+holds focus — so the focused widget is checked before the screen, and without priority `q` closes
+Librarian outright. Mutation-verified: dropping the flag fails
+`test_q_closes_the_panel_and_librarian_survives`.
+
+`SmartsheetClient` loads its token from 1Password lazily, on the first request and on a worker
+thread, so constructing it when the modal opens cannot block the UI or trigger a Touch ID prompt at
+startup.
+
+Tests live in two files: `test_projects.py` covers what Librarian owns either way (resolving the
+executable, the opt-in gate, embed-preferred-over-handoff) and always runs; `test_projects_panel.py`
+covers the embed and skips via `importorskip`. The latter uses a local copy of projection's `FakeSync`
+rather than importing it, so a change in projection's own suite cannot silently alter what is tested
+here.
 
 ## Export to HTML
 

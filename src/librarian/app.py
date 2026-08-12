@@ -14,6 +14,7 @@ from .actions import (
     CalendarActionsMixin,
     FileActionsMixin,
     NavigationActionsMixin,
+    ProjectsActionsMixin,
     RemindersActionsMixin,
 )
 from .appearance import build_folder_appearance
@@ -36,6 +37,7 @@ class LibrarianApp(
     FileActionsMixin,
     CalendarActionsMixin,
     NavigationActionsMixin,
+    ProjectsActionsMixin,
     RemindersActionsMixin,
     App,
 ):
@@ -382,6 +384,8 @@ class LibrarianApp(
             self.action_launch_reminders()
         elif event.tool_name == "calendar":
             self.action_open_calendar()
+        elif event.tool_name == "projects":
+            self.action_launch_projects()
 
     async def on_tag_list_folder_highlighted(
         self, event: TagList.FolderHighlighted
