@@ -45,8 +45,9 @@ as inconsistent depending on which panel is open:
 | Where | `q` does | Why |
 |---|---|---|
 | Librarian's own panels | quits Librarian | app-level binding |
-| Calendar modal | closes the modal | screen binding, checked before the app |
-| Reminders modal | closes the modal | screen binding with `priority=True`, because remtui's panel binds `q -> app.quit` |
+| Calendar modal | closes the modal | screen binding; `priority=True` is defensive here, since nothing inside claims `q` |
+| Reminders modal | closes the modal | screen binding, `priority=True` **required**: remtui's panel binds `q -> app.quit` |
+| Projects modal | closes the modal | same as Reminders — projection's panel also binds `q -> app.quit` |
 | remtui / projection standalone | quits that app | their own app-level binding |
 
 So the same key means "quit the program" in one place and "back out one level" in another, and which
