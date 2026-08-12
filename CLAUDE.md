@@ -604,6 +604,14 @@ dependency carries a `python_version >= '3.12'` marker for the same reason, and 
 
 Three things make the embed work:
 
+- **The hosted panels' dialogs share one contract.** remtui's and projection's edit dialogs use the
+  same shape — `[secondary…] [Cancel] [Primary]` right-aligned, `btn-*` ids, a `Footer` derived from
+  `BINDINGS`, focus starting in the first field, and the safe option focused in a destructive
+  confirm. Their bindings are `priority=True`, without which the focused `Input` swallows `ctrl+e`
+  and friends — so the dialog's own shortcuts died exactly where the cursor starts. Tests in
+  `test_projects_panel.py` / `test_reminders_panel.py` pin that the contract still holds when the
+  dialog is pushed onto *Librarian's* screen stack, including that `s` and `u` stay unreachable and
+  that `escape` closes the dialog rather than the panel.
 - **The embed drops the panel's wordmark.** Both panels take `show_logo=False`, which Librarian
   passes: its own frame already labels the panel, so the three sidebar rows go to the lists instead.
   The flag is newer than the embed, so each modal checks `inspect.signature` before passing it —

@@ -229,3 +229,85 @@ class TestPanelInteraction:
             assert len(list_view.children) == 0
             assert before > 0
             assert app.is_running
+
+
+class TestDialogsWhileEmbedded:
+    """The dialog contract has to hold inside Librarian too."""
+
+    async def test_add_form_opens_over_librarian_with_its_own_contract(
+        self, app, tmp_path, monkeypatch
+    ):
+        from remtui.screens import ReminderFormScreen
+
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await open_panel(app, pilot, tmp_path, monkeypatch)
+
+            await pilot.press("a")
+            for _ in range(15):
+                await pilot.pause()
+                if isinstance(app.screen, ReminderFormScreen):
+                    break
+
+            modal = app.screen
+            assert isinstance(modal, ReminderFormScreen)
+
+            buttons = [(b.id, str(b.label)) for b in modal.query("Button")]
+            assert buttons == [
+                ("btn-editor", "Editor"),
+                ("btn-cancel", "Cancel"),
+                ("btn-save", "Add"),
+            ]
+            assert modal.query("Footer")
+            assert app.focused.id == "f-title"
+
+    async def test_the_dialogs_keys_win_over_librarians(
+        self, app, tmp_path, monkeypatch
+    ):
+        from remtui.screens import ReminderFormScreen
+
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await open_panel(app, pilot, tmp_path, monkeypatch)
+
+            await pilot.press("a")
+            for _ in range(15):
+                await pilot.pause()
+                if isinstance(app.screen, ReminderFormScreen):
+                    break
+
+            modal = app.screen
+            for key, description in (
+                ("ctrl+s", "Save"),
+                ("ctrl+e", "Editor"),
+                ("escape", "Cancel"),
+            ):
+                binding = modal.active_bindings.get(key)
+                assert binding is not None, f"{key} unreachable inside Librarian"
+                assert binding.node is modal, f"{key} resolved to {binding.node!r}"
+                assert binding.binding.description == description
+
+            assert "s" not in modal.active_bindings
+            assert "u" not in modal.active_bindings
+
+    async def test_escape_closes_the_form_not_the_panel(
+        self, app, tmp_path, monkeypatch
+    ):
+        from remtui.screens import ReminderFormScreen
+
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await open_panel(app, pilot, tmp_path, monkeypatch)
+
+            await pilot.press("a")
+            for _ in range(15):
+                await pilot.pause()
+                if isinstance(app.screen, ReminderFormScreen):
+                    break
+
+            await pilot.press("escape")
+            for _ in range(10):
+                await pilot.pause()
+
+            assert isinstance(app.screen, RemindersModal)
+            assert app.is_running

@@ -334,3 +334,94 @@ class TestOlderProjectionCompatibility:
             # It keeps its wordmark -- cosmetic, and better than not opening.
             panel = app.screen.query_one("#projects-panel")
             assert panel.query("#logo")
+
+
+class TestDialogsWhileEmbedded:
+    """The dialog contract has to hold inside Librarian too.
+
+    A dialog opened from an embedded panel is pushed onto *Librarian's* screen
+    stack, so the risk is its footer or its keys resolving against the host.
+    """
+
+    async def test_edit_dialog_opens_over_librarian_with_its_own_contract(
+        self, app, fake_backend
+    ):
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            panel = await open_panel(app, pilot)
+            panel.query_one("#projects").focus()
+            await pilot.pause()
+
+            await pilot.press("e")
+            for _ in range(15):
+                await pilot.pause()
+                if type(app.screen).__name__ == "EditModal":
+                    break
+
+            modal = app.screen
+            assert type(modal).__name__ == "EditModal"
+
+            buttons = [(b.id, str(b.label)) for b in modal.query("Button")]
+            assert buttons == [
+                ("btn-editor", "Editor"),
+                ("btn-done", "Done"),
+                ("btn-cancel", "Cancel"),
+                ("btn-save", "Save"),
+            ]
+            assert modal.query("Footer")
+            assert app.focused.id == "title-input"
+
+    async def test_the_dialogs_keys_win_over_librarians(self, app, fake_backend):
+        """Librarian binds `e`, `d`, `x`, `n` on the App and `q` on the modal.
+
+        The dialog's own bindings must be what resolves -- and Librarian's must
+        not fire underneath.
+        """
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            panel = await open_panel(app, pilot)
+            panel.query_one("#projects").focus()
+            await pilot.pause()
+
+            await pilot.press("e")
+            for _ in range(15):
+                await pilot.pause()
+                if type(app.screen).__name__ == "EditModal":
+                    break
+
+            modal = app.screen
+            for key, description in (
+                ("ctrl+s", "Save"),
+                ("ctrl+e", "Editor"),
+                ("ctrl+d", "Done"),
+                ("escape", "Cancel"),
+            ):
+                binding = modal.active_bindings.get(key)
+                assert binding is not None, f"{key} unreachable inside Librarian"
+                assert binding.node is modal, f"{key} resolved to {binding.node!r}"
+                assert binding.binding.description == description
+
+            # Librarian's own single-letter actions are not reachable here.
+            assert "s" not in modal.active_bindings
+            assert "u" not in modal.active_bindings
+
+    async def test_escape_closes_the_dialog_not_the_panel(self, app, fake_backend):
+        """Escape should back out one level, leaving the panel up."""
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            panel = await open_panel(app, pilot)
+            panel.query_one("#projects").focus()
+            await pilot.pause()
+
+            await pilot.press("e")
+            for _ in range(15):
+                await pilot.pause()
+                if type(app.screen).__name__ == "EditModal":
+                    break
+
+            await pilot.press("escape")
+            for _ in range(10):
+                await pilot.pause()
+
+            assert isinstance(app.screen, ProjectsModal)
+            assert app.is_running
