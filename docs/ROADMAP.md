@@ -19,13 +19,24 @@ projects = ["projection @ git+https://github.com/7robots/projection.git ; python
 
 but that repository is **private**, so declaring it in a public project means `uv sync --extra
 projects` fails for anyone without access — unlike remtui, which is public. So it is deliberately
-*not* declared, and `uv pip install -e ~/GitHub/projection` installs it by hand. The cost of that
-choice: `uv sync` and `./install.sh` both drop the package again, since it is not in the lockfile.
+*not* declared, and `uv pip install -e ~/GitHub/projection` installs it by hand.
 
-Options: publish projection, split its panel into a public package, or keep it manual and accept the
-re-install step. Note the two wrinkles that prompted this are now settled — `SmartsheetClient` loads
-its 1Password token lazily on the first request, so constructing it cannot block or prompt for Touch
-ID at startup, and the panel degrades to a message when Smartsheet is unreachable.
+**The install friction is fixed**: `install.sh` now syncs `--inexact`, so it no longer deletes a
+hand-installed projection (it also passes `--extra reminders`, which it never did, so a fresh install
+silently lacked remtui and fell back to the handoff). A bare `uv sync` is still exact and will remove
+it — use `./install.sh` or `uv sync --inexact`.
+
+What remains is only that **anyone without repo access cannot get the Projects panel** and falls back
+to the executable. Options: publish projection, or split its panel into a public package with a
+pluggable data source. Two approaches were considered and rejected: vendoring clones into Librarian's
+tree (trades the lockfile's reproducibility for "whatever HEAD was", does not help private access,
+and — since one distribution name can only be installed once — leaves two clones on disk with the
+wrong one silently authoritative), and git submodules (keeps pinning, but still needs credentials,
+and uv rejects `sources` in `uv.toml`, so a machine-local path override is not expressible).
+
+Note the two wrinkles that prompted this are now settled — `SmartsheetClient` loads its 1Password
+token lazily on the first request, so constructing it cannot block or prompt for Touch ID at startup,
+and the panel degrades to a message when Smartsheet is unreachable.
 
 ### Rethink what `q` means inside an embedded panel
 **Needs a design conversation before any code.** Right now `q` is overloaded and the behavior reads

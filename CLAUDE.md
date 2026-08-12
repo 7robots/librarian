@@ -41,7 +41,11 @@ src/librarian/
 - **Config location**: `$XDG_CONFIG_HOME/librarian/config.toml`, else `~/.config/librarian/config.toml`.
   remtui and taskpapertui resolve config the same way, so the three sit side by side
 - **Install**: `./install.sh` syncs the env and puts a launcher in `~/bin` (`--dir DIR`, `--uninstall`).
-  The identical script ships in remtui and taskpapertui — one install command across the three
+  The identical script ships in remtui, projection, and taskpapertui — one install command across the
+  four; only the `APP=`/`EXTRAS=` lines at the top differ. It syncs
+  `--inexact --extra "$EXTRAS"`: exact is the `uv sync` default and **deleted** hand-installed
+  optional panels (projection), while omitting the extra meant a fresh install silently lacked remtui
+  and fell back to the terminal handoff. `EXTRAS` is empty in the other three
 - **Index storage**: JSON at configurable `data_directory` (default: `~/.local/share/librarian/`). Atomic writes for iCloud compatibility.
 - **Tag format**: Inline hashtags matching `#[a-zA-Z][a-zA-Z0-9_-]*`, where the `#` must start a line
   or follow whitespace, and code blocks are skipped. Without the whitespace rule every URL fragment

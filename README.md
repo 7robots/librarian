@@ -59,7 +59,7 @@ is also the update path. The same script with the same defaults ships in
 [remtui](https://github.com/7robots/remtui) and
 [TaskPaperTUI](https://github.com/7robots/TaskPaperTUI).
 
-To run from the checkout without installing: `uv sync && uv run librarian`.
+To run from the checkout without installing: `uv sync --extra reminders && uv run librarian`.
 
 On first run Librarian writes `~/.config/librarian/config.toml` (honoring `XDG_CONFIG_HOME`), creates
 its index under `~/.local/share/librarian/`, and scans `~/Documents` for markdown and taskpaper
@@ -165,15 +165,16 @@ reminders = ""   # or a path; empty finds "remtui" on PATH
 ```
 
 Select **Reminders** and the reminders list opens as a panel over the Files and Preview panels, with
-your folder tree and tag list still visible; `q` closes it. That needs remtui installed as a
-Python package:
+your folder tree and tag list still visible; `q` closes it. `./install.sh` installs remtui for you,
+so there is nothing extra to do; running from a checkout instead needs the extra by hand:
 
 ```bash
 uv sync --extra reminders
 ```
 
-Without it, Librarian falls back to suspending and running the `remtui` executable, returning to your
-panels when you quit. (remtui needs Python 3.12+, so on 3.10 or 3.11 only the fallback is available.)
+Without the package, Librarian falls back to suspending and running the `remtui` executable,
+returning to your panels when you quit. (remtui needs Python 3.12+, so on 3.10 or 3.11 only the
+fallback is available — the extra resolves to nothing there rather than failing.)
 
 Either way, reminders live in Apple Reminders rather than in files, so nothing here touches your
 notes or the index.
@@ -209,8 +210,10 @@ so `uv sync --extra ...` would fail for anyone without access. Install it by han
 uv pip install -e /path/to/projection
 ```
 
-Note that `uv sync` and `./install.sh` drop it again, since it is not in the lockfile. Without the
-package, Librarian falls back to suspending and running the `projection` executable.
+That install now survives `./install.sh`, which syncs with `--inexact` so it does not delete packages
+it did not put there. A bare `uv sync` **is** exact and still removes it, so prefer `./install.sh` (or
+`uv sync --inexact`) when updating. Without the package, Librarian falls back to suspending and
+running the `projection` executable.
 
 Projects live in Smartsheet rather than in files, so nothing here touches your notes or the index.
 
