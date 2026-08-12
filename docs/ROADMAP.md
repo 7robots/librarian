@@ -81,6 +81,80 @@ them, which is why `a`/`n`/`e` are re-declared on the calendar modal by hand.
 only in an arrow character in a docstring. TaskPaperTUI is the natural owner now that it has tests
 covering it; Librarian could depend on it, or the pair could move to a small shared package.
 
+## Cross-cutting (all four projects)
+
+These span librarian, remtui, projection, and taskpapertui. Recorded here because librarian is the
+hub — it embeds the other three — but the work touches each repo.
+
+### Performance review
+No measurements have been taken, so this is a review rather than a fix: **establish a baseline before
+optimizing anything.** Nothing is known to be slow today; the point is to find out whether it is.
+
+Worth measuring, roughly in order of suspicion:
+
+- **librarian's startup scan** against the real vault (iCloud-backed Obsidian), not a fixture. Scanning
+  skips by mtime, but the first run and any `SCANNER_VERSION` bump do the whole tree.
+- **Index writes.** Every write is atomic (temp file + `os.replace()`) and the data directory may sit
+  on iCloud Drive, where that pattern is markedly slower than on a local disk. `batch_writes()`
+  already exists; the question is whether every write path uses it.
+- **The file watcher.** Debounced rescans plus the tag-list rebuild on each change.
+- **Preview rendering** for large markdown, and whether the 10-file LRU cache is the right size.
+- **Subprocess round-trips.** remtui shells out to `remctl` per operation, and librarian to `icalPal`;
+  both are per-call process spawns. projection's `SyncCoordinator` polls on `DATA_POLL_INTERVAL`.
+- **Textual-specific traps** we have already been bitten by once: DOM rebuilds inside exclusive
+  workers, and `on_resize` handlers that change the size they are reacting to.
+
+Tooling: `textual console`, `cProfile` around the scan, and timing harnesses over a copy of the real
+vault. Record the numbers in this file so the "is it slow?" question has an answer next time.
+
+### Prototype a Rust/ratatui re-implementation — only if the review says so
+**Explicitly conditional on the performance review above.** If the numbers are fine, or the problems
+turn out to be I/O bound (subprocess spawns, iCloud, network), a rewrite fixes nothing — a faster
+language does not make `op read` or a Smartsheet round-trip return sooner.
+
+If a rewrite is warranted, [ratatui](https://ratatui.rs) is the obvious target: it is the maintained
+successor to tui-rs and the mainstream choice for Rust TUIs.
+
+**The load-bearing constraint, worth deciding before any code:** the embedding architecture is
+Python-specific. librarian mounts remtui's `RemindersPanel` and projection's `ProjectsPanel` as
+Textual widgets *in the same process*. Rewriting any one of those three in Rust means librarian can no
+longer embed it, and that tool drops to the suspend-and-launch handoff — losing the panel experience
+we just built. So the realistic candidates are:
+
+- **taskpapertui**, which librarian only ever launches as an external program, so nothing is lost; or
+- **librarian itself**, which is the host and embeds rather than being embedded — but then remtui and
+  projection become unembeddable in it, which is the same problem from the other side; or
+- **accept the handoff** for whichever app is rewritten, and treat the panel embedding as a
+  Python-era feature.
+
+A prototype should therefore be scoped as a throwaway that answers one question — is the performance
+difference real and worth this? — not as a migration.
+
+### Security and code review
+The four repos have never had a deliberate security pass; taskpapertui got a pre-publication audit,
+but that was scoped to "is anything in here specific to me", not to safety. Surfaces worth a careful
+look:
+
+- **Subprocess construction.** `op`, `icalPal`, `remctl`, `$EDITOR`, `taskpapertui`, and the
+  `remtui`/`projection` executables are all spawned. Check argument lists are never shell-interpolated,
+  and that PATH resolution cannot pick up an unexpected binary.
+- **Untrusted input is not hypothetical here.** Calendar events and reminders carry text written by
+  *other people* — meeting titles, attendee names, notes — and that text reaches rendered markdown,
+  notification messages, and **filenames** (`action_new_file` builds a meeting note's name from the
+  event title). The sanitizing there deserves adversarial attention.
+- **Path handling.** Rename, move, delete, and export all take user-supplied destinations. Can any of
+  them escape `scan_directory` or `export_directory`? Can a crafted `[[wiki link]]` resolve outside
+  the vault?
+- **HTML export sanitization** (`export.py`) strips dangerous tags and attributes. Confirm whether it
+  is a denylist — denylists leak — and what happens with nested or malformed markup.
+- **Token handling in projection.** The Smartsheet token is read from 1Password and held in memory.
+  Verify it cannot reach a traceback, a log line, a notification, or the exported summary.
+- **Data-loss review** rather than attacker-driven: atomic writes under iCloud, and what happens if
+  two Librarian instances run against one index.
+
+projection needs this pass **before** it goes public, so it pairs naturally with the backend
+abstraction work above.
+
 ## Deferred
 
 ### Expand the Lucide → Nerd Font glyph table
