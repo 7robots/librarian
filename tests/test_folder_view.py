@@ -470,3 +470,67 @@ class TestFilesFollowsTheLastPanelTouched:
             await pilot.pause()
 
             assert file_list.get_header_text() == "FILES (#tagged)"
+
+
+class TestSidebarProportions:
+    """Folders and Tags carry equal weight; Tools takes only what it needs.
+
+    The trap: `#tools-list-view` at `height: 1fr` inside the `auto`-height
+    `#tools-panel` grabs the leftover sidebar space, so a three-item launcher
+    menu rendered as tall as the folder tree.
+    """
+
+    async def test_folders_and_tags_are_equal_height(self, app):
+        async with app.run_test(size=(100, 40)) as pilot:
+            await pilot.pause()
+            tag_list = app.query_one(TagList)
+
+            folders = tag_list.query_one("#folders-panel").region
+            tags = tag_list.query_one("#tags-panel").region
+
+            assert abs(folders.height - tags.height) <= 1, (
+                f"folders={folders.height} tags={tags.height}"
+            )
+
+    async def test_panels_run_folders_then_tags_then_tools(self, app):
+        async with app.run_test(size=(100, 40)) as pilot:
+            await pilot.pause()
+            tag_list = app.query_one(TagList)
+
+            assert [c.id for c in tag_list.children] == [
+                "folders-panel",
+                "tags-panel",
+                "tools-panel",
+            ]
+            tops = [
+                tag_list.query_one(f"#{pid}").region.y
+                for pid in ("folders-panel", "tags-panel", "tools-panel")
+            ]
+            assert tops == sorted(tops), f"panels are not stacked in order: {tops}"
+
+    async def test_tools_panel_hugs_its_items(self, config, tmp_index):
+        """Three launchers should not take a folder-tree's worth of rows."""
+        from librarian.app import LibrarianApp
+        from librarian.config import ToolsConfig
+
+        config.tools = ToolsConfig(reminders=True, calendar=True, projects=True)
+        app = LibrarianApp(config)
+
+        async with app.run_test(size=(100, 40)) as pilot:
+            await pilot.pause()
+            tag_list = app.query_one(TagList)
+
+            tools = tag_list.query_one("#tools-panel").region
+            folders = tag_list.query_one("#folders-panel").region
+
+            # header + 3 rows + borders, nowhere near the tree's height.
+            assert tools.height <= 8, f"tools panel is {tools.height} rows"
+            assert tools.height < folders.height
+
+    async def test_an_empty_tools_panel_collapses_to_its_header(self, app):
+        async with app.run_test(size=(100, 40)) as pilot:
+            await pilot.pause()
+            tag_list = app.query_one(TagList)
+
+            tools = tag_list.query_one("#tools-panel").region
+            assert tools.height <= 3, f"empty tools panel is {tools.height} rows"

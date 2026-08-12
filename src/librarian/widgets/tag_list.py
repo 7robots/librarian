@@ -179,10 +179,11 @@ class TagList(Vertical):
         color: $warning;
     }
 
-    /* Folders gets the most room; Tools is a short list of launchers, so it
-       takes only the rows it needs. */
+    /* Folders and Tags split the sidebar evenly -- browsing a tree and
+       jumping to a tag are equally weighted, and neither should crowd the
+       other. Tools takes only the rows its launchers need, at the bottom. */
     TagList #folders-panel {
-        height: 2fr;
+        height: 1fr;
         border: solid $success;
     }
 
@@ -209,8 +210,12 @@ class TagList(Vertical):
         border: solid cyan;
     }
 
+    /* auto, not 1fr: a 1fr child inside the auto-height #tools-panel grabs
+       the leftover sidebar space, which made a three-item menu render as tall
+       as the folder tree. auto also keeps the panel collapsing to its header
+       when no tools are enabled. */
     TagList #tools-list-view {
-        height: 1fr;
+        height: auto;
     }
 
     TagList #tools-list-view ListItem {

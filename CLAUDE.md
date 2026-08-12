@@ -84,10 +84,12 @@ Denormalized structure with tags inline per file. Only files containing at least
 
 The app has five panels — three down the left, two on the right:
 - **Left sidebar** (25% width), all three always visible:
-  - **Folders** (`2fr`): DirectoryTree of the scan directory
-  - **All Tags** (`1fr`): every indexed tag with its file count
-  - **Tools** (`height: auto`, capped at 40%): only the tools enabled in `[tools]`, so the panel
-    collapses to its header when none are — and is skipped in the Tab cycle when empty
+  - **Folders** (`1fr`): DirectoryTree of the scan directory
+  - **All Tags** (`1fr`): every indexed tag with its file count — equal weight with Folders, since
+    browsing the tree and jumping to a tag are equally common and neither should crowd the other
+  - **Tools** (`height: auto`, capped at 40%): only the tools enabled in `[tools]`, so it takes just
+    the rows its launchers need, collapses to its header when none are enabled — and is skipped in
+    the Tab cycle when empty
 - **Right top** (33% height): File list — the selected folder's files in folder view, the selected tag's files otherwise
 - **Right bottom** (67% height): Markdown preview
 
@@ -204,9 +206,10 @@ Key bindings:
 - Widgets inherit from `Vertical` container (not `Static`)
 - ListViews use `height: 1fr` to fill available space within their sections
 - Headers use fixed `height: 1`
-- TagList: Folders `2fr`, All Tags `1fr`, Tools `height: auto` with `max-height: 40%` — the auto
-  height lets the Tools panel shrink to its header when no tools are enabled, giving the space back
-  to the folder tree
+- TagList: Folders `1fr`, All Tags `1fr`, Tools `height: auto` with `max-height: 40%`. `#tools-list-view`
+  must be `height: auto` too — a `1fr` child inside an `auto` parent grabs the leftover sidebar space,
+  which made a three-item menu render as tall as the folder tree. Auto also lets the panel shrink to
+  its header when no tools are enabled, giving the rows back to Folders and Tags
 - Each sidebar panel carries its own border color: Folders `$success`, All Tags `$primary`,
   Tools `$accent`
 - Banner widget has fixed `height: 3` with `width: 100%`; `ROBOT_ROWS` must stay 3 rows of equal, single-cell width or the text column shifts between lines

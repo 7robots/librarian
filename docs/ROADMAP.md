@@ -5,7 +5,7 @@ rather than scattering it across READMEs or issue comments.
 
 ## Planned
 
-### Publish or vendor projection so the Projects panel can be installed
+### Give projection a backend abstraction, then publish it
 The Projects tool is **built and working** — `ProjectsModal`, `[tools] projects`, the soft import,
 and the suspend-and-launch fallback all ship, with the embed verified against projection's own fakes.
 What is missing is a way for anyone to *install* it.
@@ -27,8 +27,23 @@ silently lacked remtui and fell back to the handoff). A bare `uv sync` is still 
 it — use `./install.sh` or `uv sync --inexact`.
 
 What remains is only that **anyone without repo access cannot get the Projects panel** and falls back
-to the executable. Options: publish projection, or split its panel into a public package with a
-pluggable data source. Two approaches were considered and rejected: vendoring clones into Librarian's
+to the executable.
+
+**Why projection is private, and the intended direction** (Jefferson, 2026-08-11): the repo has stayed
+private because it is heavily predicated on one team's use of a specific Smartsheet as the backing
+source of truth — the sheet's identity, its column layout, and the vocabulary around it are baked in.
+Publishing it as-is would ship someone else's schema.
+
+The intended shape before going public: **projection works against an abstraction layer — a table with
+consistent column headings — and supports different backend data sources chosen through a simple setup
+process.** Smartsheet becomes one implementation of that interface rather than the assumption. That
+subsumes the "split the panel into a public package" option below: with a real source interface, the
+whole app can be public and the Smartsheet specifics become configuration rather than a private fork.
+
+Starting points when we pick this up: `project_store.py`, `smartsheet_api.py`, and `sync.py` are where
+the Smartsheet assumptions live; `models.py` already has a `Project` type that looks close to the
+row abstraction; `secrets.py` hardcodes `op://Employee/smartsheet-api-key`, which becomes per-source
+config. Two approaches were considered and rejected for the *packaging* question: vendoring clones into Librarian's
 tree (trades the lockfile's reproducibility for "whatever HEAD was", does not help private access,
 and — since one distribution name can only be installed once — leaves two clones on disk with the
 wrong one silently authoritative), and git submodules (keeps pinning, but still needs credentials,
