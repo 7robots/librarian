@@ -7,6 +7,117 @@ from pathlib import Path
 from typing import Literal
 
 
+# Every option `save()` writes, as (table, key, default literal, comment).
+# `load()` adds any of these a config file is missing, so an option added to
+# Librarian shows up in a config written before it existed -- otherwise the only
+# way to discover a new setting is to read the source or delete the file.
+#
+# Order matters: within a table, keys are appended in the order listed here.
+_CONFIG_KEYS: tuple[tuple[str | None, str, str, str], ...] = (
+    (None, "taskpaper", '""', "TaskPaper TUI executable for .taskpaper files"),
+    (
+        None,
+        "reminders",
+        '""',
+        'Reminders TUI executable (remtui); empty = look for "remtui" on PATH',
+    ),
+    (
+        None,
+        "projects",
+        '""',
+        'Projects TUI executable (projection); empty = look for "projection" on PATH',
+    ),
+    (None, "export_directory", None, "Directory for exported files (PDF/HTML)"),
+    (None, "data_directory", None, "Directory for index data (index.json)"),
+    ("tools", "taskpaper", "false", "file-based tasks, via taskpapertui"),
+    ("tools", "reminders", "false", "Apple Reminders, via remtui"),
+    ("tools", "calendar", "false", "today's meetings, via icalPal"),
+    ("tools", "projects", "false", "Smartsheet projects, via projection"),
+    ("calendar", "calendar_name", '""', "empty = all calendars"),
+    ("calendar", "icalpal_path", '""', "empty = auto-detect"),
+    ("icons", "style", '"auto"', "auto | nerd | emoji"),
+    ("obsidian", "enabled", "true", "read folder icons from Notebook Navigator"),
+)
+
+
+def _find_table(lines: list[str], table: str) -> tuple[int, int] | None:
+    """Locate `[table]` as (header index, index just past its last key).
+
+    Trailing blank and comment lines are excluded: a comment sitting between two
+    tables introduces the *next* one, so inserting after it would read as though
+    the new key belonged to that table even though TOML still scopes it here.
+    """
+    header = f"[{table}]"
+    for i, line in enumerate(lines):
+        if line.strip() != header:
+            continue
+        end = i + 1
+        for j in range(i + 1, len(lines)):
+            if lines[j].lstrip().startswith("["):
+                break
+            if lines[j].strip() and not lines[j].lstrip().startswith("#"):
+                end = j + 1
+        return i, end
+    return None
+
+
+def _preamble_end(lines: list[str]) -> int:
+    """Where top-level keys end: before the first table, past its comments.
+
+    A bare key appended to the end of a TOML file belongs to whatever table
+    precedes it, so top-level keys have to go above the first `[table]` header
+    -- and above any comment block introducing it.
+    """
+    first_table = next(
+        (i for i, line in enumerate(lines) if line.lstrip().startswith("[")),
+        len(lines),
+    )
+    end = first_table
+    while end > 0 and (
+        not lines[end - 1].strip() or lines[end - 1].lstrip().startswith("#")
+    ):
+        end -= 1
+    return end
+
+
+def _add_missing_keys(text: str, present: dict) -> str | None:
+    """Append options the file lacks. None when nothing is missing.
+
+    Existing content is untouched -- values, ordering, and hand-written comments
+    all survive, since rewriting the file wholesale would discard them.
+    """
+    lines = text.splitlines()
+    added = False
+
+    for table, key, default, comment in _CONFIG_KEYS:
+        if default is None:
+            continue  # path defaults depend on the environment; not backfilled
+        scope = present.get(table, {}) if table else present
+        if not isinstance(scope, dict) or key in scope:
+            continue
+
+        entry = [f"{key} = {default}  # {comment}"]
+
+        if table is None:
+            at = _preamble_end(lines)
+        else:
+            found = _find_table(lines, table)
+            if found is None:
+                if lines and lines[-1].strip():
+                    lines.append("")
+                lines.append(f"[{table}]")
+                at = len(lines)
+            else:
+                at = found[1]
+
+        lines[at:at] = entry
+        added = True
+
+    if not added:
+        return None
+    return "\n".join(lines) + "\n"
+
+
 def get_config_dir() -> Path:
     """Get the librarian config directory.
 
@@ -160,6 +271,18 @@ class Config:
         # Load existing config
         with open(config_path, "rb") as f:
             data = tomllib.load(f)
+
+        # Backfill options added since this file was written. Without this, a
+        # config created before a setting existed never gains it, and the only
+        # way to find the new switch is to read the source.
+        try:
+            text = config_path.read_text(encoding="utf-8")
+            updated = _add_missing_keys(text, data)
+            if updated is not None:
+                config_path.write_text(updated, encoding="utf-8")
+        except OSError:
+            # A read-only config directory must not stop Librarian starting.
+            pass
 
         # Parse scan_directory
         scan_dir = data.get("scan_directory", "~/Documents")
