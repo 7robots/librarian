@@ -8,6 +8,43 @@ import pytest
 from librarian import database
 
 
+@pytest.fixture(autouse=True)
+def isolate_projection_paths(monkeypatch, tmp_path):
+    """Keep the embed tests away from the real projection config and store.
+
+    `ProjectsPanel` reads projection's own config when it is not handed one --
+    which is exactly what happens here, since a host has no reason to know about
+    it -- and from that config comes the path to projection's project store,
+    which is its *source of record*, not a cache. A test that builds a panel
+    therefore reads, migrates and rewrites real user data.
+
+    Today nothing does, but only because `fake_backend` stubs the sync
+    coordinator out; the protection is a side effect of that stubbing rather than
+    anything deliberate. One new test that mounts a panel without asking for that
+    fixture would be enough. projection's own suite has the same fixture for the
+    same reason.
+
+    A no-op when projection is not installed.
+    """
+    try:
+        from projection import config as projection_config
+        from projection import local_storage as projection_storage
+    except ImportError:
+        return
+
+    monkeypatch.setattr(projection_config, "CONFIG_DIR", tmp_path / "pconfig")
+    monkeypatch.setattr(
+        projection_config,
+        "DEFAULT_CONFIG_FILE",
+        tmp_path / "pconfig" / "config.toml",
+    )
+    monkeypatch.setattr(projection_config, "DATA_DIR", tmp_path / "pdata")
+    # `LocalStorage` carries its own default, independent of the config module's.
+    monkeypatch.setattr(
+        projection_storage, "DEFAULT_STORAGE_DIR", tmp_path / "pdata"
+    )
+
+
 @pytest.fixture
 def tmp_index(tmp_path):
     """Initialize database with a fresh temp index and clean up after."""

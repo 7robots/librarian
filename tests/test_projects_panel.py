@@ -12,6 +12,7 @@ coordinator is replaced with projection's own fake, the same one its suite uses.
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 import pytest
 
@@ -444,3 +445,39 @@ class TestDialogsWhileEmbedded:
 
             assert isinstance(app.screen, ProjectsModal)
             assert app.is_running
+
+
+class TestRealUserDataIsNeverTouched:
+    """The embed must not read or rewrite projection's real store.
+
+    That store is projection's *source of record*, and mounting a panel is enough
+    to make it migrate: the panel reads projection's config when it is not handed
+    one, and the store path comes from that config. Until `isolate_projection_paths`
+    in conftest, nothing stopped this except `fake_backend` happening to stub the
+    coordinator out.
+    """
+
+    def test_the_store_path_is_redirected(self, tmp_path):
+        from projection.config import Config
+
+        assert str(tmp_path) in str(Config.load().data_dir)
+
+    async def test_mounting_a_panel_without_a_fake_backend_stays_in_the_sandbox(
+        self, app, tmp_path
+    ):
+        """Deliberately no `fake_backend`: this is the unguarded path."""
+        from projection.local_storage import LocalStorage
+
+        real = Path.home() / ".local" / "share" / "projection"
+        before = (real / "projects.json").read_bytes() if (real / "projects.json").exists() else None
+
+        async with app.run_test(size=(120, 38)) as pilot:
+            await pilot.pause()
+            app.push_screen(ProjectsModal(FakeClient()))
+            for _ in range(10):
+                await pilot.pause()
+
+        after = (real / "projects.json").read_bytes() if (real / "projects.json").exists() else None
+        assert before == after, "the embed rewrote the real projection store"
+        # And whatever it did touch went to the sandbox.
+        assert str(tmp_path) in str(LocalStorage("projects").path)
