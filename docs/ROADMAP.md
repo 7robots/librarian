@@ -47,10 +47,19 @@ quit binding on mount so hosted panels never define the meaning. Whatever we pic
 what happens to the *host's* keys while a panel is open — a `ModalScreen` currently hides all of
 them, which is why `a`/`n`/`e` are re-declared on the calendar modal by hand.
 
-### De-duplicate the taskpaper → markdown conversion
+### ~~De-duplicate the taskpaper → markdown conversion~~ — dropped 2026-08-13
 `librarian/taskpaper.py` and `taskpapertui/widgets/preview.py` hold the same conversion, differing
-only in an arrow character in a docstring. TaskPaperTUI is the natural owner now that it has tests
-covering it; Librarian could depend on it, or the pair could move to a small shared package.
+only in an arrow character in a docstring, and the plan was for TaskPaperTUI to own it.
+
+**Not worth doing now.** Jefferson has stopped using taskpapertui entirely, in favour of remtui or
+projection depending on the workflow, so the payoff — one owner for a small function — would buy a
+dependency on an app he no longer runs. Librarian keeps its own copy, which is nobody's burden at ~40
+lines.
+
+Note what this does *not* change: `.taskpaper` **files** are still first-class in Librarian — indexed
+by the scanner, converted for preview and export by `taskpaper.py`, and opened by `e` with the
+`taskpaper` editor setting. That support is independent of taskpapertui the application, and the
+`[tools] taskpaper` launcher remains a suspend-and-launch handoff, which is where it stays.
 
 ## Cross-cutting (all four projects)
 
@@ -92,7 +101,8 @@ Textual widgets *in the same process*. Rewriting any one of those three in Rust 
 longer embed it, and that tool drops to the suspend-and-launch handoff — losing the panel experience
 we just built. So the realistic candidates are:
 
-- **taskpapertui**, which librarian only ever launches as an external program, so nothing is lost; or
+- **taskpapertui**, which librarian only ever launches as an external program, so nothing is lost —
+  and which is now unused besides, making it the cheapest possible throwaway; or
 - **librarian itself**, which is the host and embeds rather than being embedded — but then remtui and
   projection become unembeddable in it, which is the same problem from the other side; or
 - **accept the handoff** for whichever app is rewritten, and treat the panel embedding as a
@@ -102,7 +112,8 @@ A prototype should therefore be scoped as a throwaway that answers one question 
 difference real and worth this? — not as a migration.
 
 ### Security and code review
-The four repos have never had a deliberate security pass; taskpapertui got a pre-publication audit,
+Three of the four repos still need this (projection's ran on 2026-08-12 — see its roadmap), and
+taskpapertui is now unused, so it is the lowest priority of them. taskpapertui got a pre-publication audit,
 but that was scoped to "is anything in here specific to me", not to safety. Surfaces worth a careful
 look:
 
