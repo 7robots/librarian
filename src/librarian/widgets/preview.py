@@ -64,6 +64,36 @@ class FileCache:
 # Shared cache instance
 _file_cache = FileCache(max_size=10)
 
+# How much of a document is rendered while the file cursor is still moving.
+#
+# Textual's `Markdown` mounts one widget per block, on the message loop, and that
+# is the entire cost of a preview: measured against the real vault, reading and
+# preprocessing are 0.0 ms while mounting is ~0.3 ms per widget. A long note is
+# thousands of widgets — one 61 KB note measured 1.9 s, during which nothing
+# repaints and no key is handled. Eighty lines holds the worst note in that vault
+# to ~60 ms and is more than a screenful; the rest arrives once the cursor stops.
+BROWSE_LINES = 80
+
+# A note this long or shorter is completed automatically a moment after the
+# cursor stops. Beyond it, the rest waits until the preview is focused: the
+# vault this was measured against has 30 notes over 400 lines, and the longest
+# takes 1.7 s to render in full — a freeze nobody asked for by merely pausing.
+AUTO_COMPLETE_LINES = 150
+
+
+def head_of(content: str, max_lines: int) -> tuple[str, bool]:
+    """The first `max_lines` lines, and whether anything was left out.
+
+    Lines rather than markdown blocks, deliberately: a block can be a
+    two-hundred-row table, and capping by blocks left the worst note at 87 ms
+    with a cap of ten. Cutting mid-block can produce a partial table, which
+    renders as plain text for the moment before the full document replaces it.
+    """
+    lines = content.splitlines()
+    if len(lines) <= max_lines:
+        return content, False
+    return "\n".join(lines[:max_lines]), True
+
 
 def invalidate_file_cache(path: Path) -> None:
     """Invalidate cache for a file (call when file changes)."""
@@ -149,6 +179,9 @@ class Preview(Vertical):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self._current_file: Path | None = None
+        # Set while only the head of a file is on screen: the full text, waiting
+        # for the cursor to settle or for this pane to be focused.
+        self._unrendered: tuple[Path, str] | None = None
 
     def compose(self) -> ComposeResult:
         yield Static("PREVIEW", id="preview-header")
@@ -189,14 +222,25 @@ class Preview(Vertical):
             await markdown.update(content)
 
     async def show_content(
-        self, file_path: Path, content: str | None, error: str | None
-    ) -> None:
+        self,
+        file_path: Path,
+        content: str | None,
+        error: str | None,
+        *,
+        max_lines: int | None = None,
+    ) -> bool:
         """Display pre-loaded content (no I/O, safe for main thread).
 
         Args:
             file_path: The file being displayed (for header and tracking)
             content: Pre-processed markdown content, or None if error
             error: Error message to display, or None if successful
+            max_lines: Render only this many lines. The caller re-renders in
+                full once the cursor settles; see `BROWSE_LINES`.
+
+        Returns:
+            True when the render was cut short, so the caller knows there is a
+            fuller version worth showing.
         """
         self._current_file = file_path
 
@@ -207,8 +251,57 @@ class Preview(Vertical):
 
         if error:
             await markdown.update(error)
-        else:
-            await markdown.update(content or "")
+            return False
+
+        full = content or ""
+        text = full
+        truncated = False
+        # Someone with the pane focused is reading it, not scrolling past it, so
+        # there is nothing to save by truncating — and the focus *event* cannot
+        # help here, having already fired before this file was chosen.
+        if max_lines is not None and not self.scroll_view.has_focus:
+            text, truncated = head_of(full, max_lines)
+
+        self._unrendered = (file_path, full) if truncated else None
+        if truncated:
+            shown = len(text.splitlines())
+            total = len(full.splitlines())
+            header.update(
+                f"PREVIEW - {file_path.name}  ({shown}/{total} lines — tab to read on)"
+            )
+
+        await markdown.update(text)
+        return truncated
+
+    async def render_full(self) -> None:
+        """Replace a truncated preview with the whole file.
+
+        Idempotent and self-cancelling: nothing happens if the full text is
+        already on screen, or if the cursor has moved to another file since.
+        """
+        pending = self._unrendered
+        if pending is None:
+            return
+        file_path, content = pending
+        if file_path != self._current_file:
+            self._unrendered = None
+            return
+
+        self._unrendered = None
+        self.query_one("#preview-header", Static).update(
+            f"PREVIEW - {file_path.name}"
+        )
+        await self.markdown_widget.update(content)
+
+    def on_descendant_focus(self, event) -> None:
+        """Focusing the pane means reading it, which is worth the full render.
+
+        The alternative is a note that is silently short — and scrolling into a
+        document that stops at line 80 with no explanation is worse than waiting
+        for it. The header says so until this fires.
+        """
+        if self._unrendered is not None:
+            self.run_worker(self.render_full(), name="preview-full", group="preview-full")
 
     async def show_markdown(self, title: str, content: str) -> None:
         """Display markdown that does not come from a file.

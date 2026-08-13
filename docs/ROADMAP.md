@@ -67,8 +67,32 @@ These span librarian, remtui, projection, and taskpapertui. Recorded here becaus
 hub — it embeds the other three — but the work touches each repo.
 
 ### Performance review
-No measurements have been taken, so this is a review rather than a fix: **establish a baseline before
-optimizing anything.** Nothing is known to be slow today; the point is to find out whether it is.
+**Started 2026-08-13 with the preview, which was the one thing that actually felt slow.** Measured
+against the real vault (1117 notes) rather than a fixture, and the answer was not where it was
+expected:
+
+| Where the time went | Measured |
+|---|---|
+| Reading the file, including iCloud and the LRU cache | **0.0 ms** |
+| Wiki-link preprocessing | **0.0 ms** |
+| `Markdown.update()` — Textual mounts one widget per block, on the message loop | **~0.3 ms per widget** |
+
+So rendering was the entire cost, and it scales with *block count*, not bytes: a 15 KB note with 40
+lines rendered in 17 ms while a 4 KB note with 60 lines took 51 ms. The worst note in the vault
+(61 KB, 264 blocks, 4197 widgets) took **1.9 s**, and scrolling eight long notes cost **3.4 s of
+frozen UI** — because every file passed rendered in full and a render cannot be interrupted once
+started. The vault's median note is 4 blocks and renders in ~1 ms; 13% exceed 80 lines and 30 notes
+exceed 400.
+
+Fixed by rendering less, not by rendering faster: the debounce now outlasts a held arrow key (0.05 →
+0.15 s, macOS repeats at ~33 ms), the load worker is exclusive, and a browse render is capped to the
+first 80 lines — which holds the worst note to ~55 ms. Notes under 150 lines fill themselves in a
+moment after the cursor stops; longer ones say so in the header and complete when the pane is
+focused, since paying 1.7 s for a pause is the freeze this removes. **Scrolling that folder: 3484 ms →
+53 ms.**
+
+Still worth measuring, and now with a method that worked — measure the real vault, split the path into
+parts, and distrust the obvious suspect:
 
 Worth measuring, roughly in order of suspicion:
 
@@ -88,9 +112,15 @@ Tooling: `textual console`, `cProfile` around the scan, and timing harnesses ove
 vault. Record the numbers in this file so the "is it slow?" question has an answer next time.
 
 ### Prototype a Rust/ratatui re-implementation — only if the review says so
-**Explicitly conditional on the performance review above.** If the numbers are fine, or the problems
-turn out to be I/O bound (subprocess spawns, iCloud, network), a rewrite fixes nothing — a faster
-language does not make `op read` or a Smartsheet round-trip return sooner.
+**Explicitly conditional on the performance review above, and that condition now looks unmet.** The
+one thing that felt slow was the preview, and it was neither Python nor I/O: it was mounting 4197
+widgets on the message loop, which a rewrite in any language would still have to do unless it also
+rendered less. Rendering less fixed it — 3484 ms → 53 ms — in about forty lines. Revisit only if
+something *else* turns out to be slow and profiles as CPU-bound in Python itself.
+
+If the numbers had been fine, or the problems had turned out to be I/O bound (subprocess spawns,
+iCloud, network), a rewrite fixes nothing — a faster language does not make `op read` or a Smartsheet
+round-trip return sooner.
 
 If a rewrite is warranted, [ratatui](https://ratatui.rs) is the obvious target: it is the maintained
 successor to tui-rs and the mainstream choice for Rust TUIs.

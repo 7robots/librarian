@@ -30,7 +30,19 @@ from .navigation import NavigationStack
 from .scanner import list_folder_files, scan_directory
 from .watcher import FileWatcher
 from .widgets import Banner, CalendarList, FileList, Preview, TagList, load_file_content
+from .widgets.preview import AUTO_COMPLETE_LINES, BROWSE_LINES
 from .widgets.tag_list import ALL_TOOLS, TagItem
+
+
+# How long the file cursor must be still before the preview is rendered at all.
+# The old value was 0.05, shorter than a held arrow key's repeat interval, so
+# every file scrolled past rendered in full — and a render cannot be interrupted
+# once it starts. Scrolling eight long notes cost 3.4 s of frozen UI.
+PREVIEW_DEBOUNCE = 0.15
+
+# ...and how long after that before the remainder of a long note is filled in.
+# Long enough that scrolling never triggers it, short enough to feel automatic.
+PREVIEW_SETTLE = 0.35
 
 
 class LibrarianApp(
@@ -114,7 +126,9 @@ class LibrarianApp(
         self._watcher: FileWatcher | None = None
         self._nav_stack = NavigationStack()
         self._preview_timer: Timer | None = None
-        self._pending_preview_path: Path | None = None
+        # Set once a capped preview is on screen, to fill in the rest if the
+        # cursor stays put. Cancelled by the next highlight.
+        self._preview_full_timer: Timer | None = None
 
     def visible_tools(self) -> tuple[str, ...]:
         """Tools to show in the menu, dropping those disabled in config."""
@@ -212,23 +226,53 @@ class LibrarianApp(
                     calendar_list.update_events(result)
 
         elif worker_name == "_load_preview":
-            file_path = self._pending_preview_path
-            self._pending_preview_path = None
-
-            if file_path is None:
+            result = event.worker.result
+            if not result:
                 return
+            file_path, (content, error) = result
 
             file_list = self.query_one("#file-list", FileList)
             if file_path not in file_list._files:
                 return
 
-            result = event.worker.result
-            if result:
-                content, error = result
-                preview = self.query_one("#preview", Preview)
-                self.call_later(
-                    lambda: preview.show_content(file_path, content, error)
-                )
+            preview = self.query_one("#preview", Preview)
+            self.call_later(
+                lambda: self._show_preview(preview, file_path, content, error)
+            )
+
+    async def _show_preview(
+        self,
+        preview: Preview,
+        file_path: Path,
+        content: str | None,
+        error: str | None,
+    ) -> None:
+        """Show the head of a file now, and the rest if the cursor settles.
+
+        Rendering is the whole cost of a preview -- Textual mounts a widget per
+        markdown block, on the message loop -- so a long note freezes the UI for
+        as long as it takes. Showing a screenful keeps browsing responsive; the
+        remainder follows shortly after the cursor stops, so nothing is
+        permanently hidden and there is no mode to notice.
+        """
+        truncated = await preview.show_content(
+            file_path, content, error, max_lines=BROWSE_LINES
+        )
+        if not truncated:
+            return
+
+        # Long notes are left truncated until the pane is focused; completing one
+        # costs as much as rendering it did, and paying that for a pause is the
+        # freeze this change exists to remove. Shorter ones cost little, so they
+        # complete themselves and the truncation is never noticed.
+        if len((content or "").splitlines()) > AUTO_COMPLETE_LINES:
+            return
+
+        def fill_in() -> None:
+            self._preview_full_timer = None
+            self.call_later(preview.render_full)
+
+        self._preview_full_timer = self.set_timer(PREVIEW_SETTLE, fill_in)
 
     def on_app_focus(self) -> None:
         """Handle app regaining focus — invalidate calendar cache."""
@@ -309,9 +353,7 @@ class LibrarianApp(
         self, event: FileList.FileHighlighted
     ) -> None:
         """Handle file highlight (cursor moved) - update preview with debouncing."""
-        if self._preview_timer is not None:
-            self._preview_timer.stop()
-            self._preview_timer = None
+        self._cancel_preview_timers()
 
         file_list = self.query_one("#file-list", FileList)
         if event.file_path not in file_list._files:
@@ -320,9 +362,17 @@ class LibrarianApp(
         file_path = event.file_path
 
         self._preview_timer = self.set_timer(
-            0.05,
+            PREVIEW_DEBOUNCE,
             lambda: self._do_preview_update(file_path),
         )
+
+    def _cancel_preview_timers(self) -> None:
+        """Drop any pending preview work: the cursor has moved on."""
+        for name in ("_preview_timer", "_preview_full_timer"):
+            timer = getattr(self, name)
+            if timer is not None:
+                timer.stop()
+                setattr(self, name, None)
 
     def _do_preview_update(self, file_path: Path) -> None:
         """Actually update the preview after debounce delay."""
@@ -343,13 +393,17 @@ class LibrarianApp(
             f"PREVIEW - {file_path.name}"
         )
 
+        # `exclusive` so a highlight that arrives mid-load cancels the load it
+        # supersedes, and the path travels *with* the result rather than in an
+        # instance attribute -- two loads in flight used to race for one slot,
+        # which could apply one file's content under another file's name.
         self.run_worker(
-            lambda: load_file_content(file_path),
+            lambda: (file_path, load_file_content(file_path)),
             name="_load_preview",
             thread=True,
             group="preview",
+            exclusive=True,
         )
-        self._pending_preview_path = file_path
 
     def _select_taskpaper_tag(self) -> None:
         """Select the #taskpaper tag and show its files."""
