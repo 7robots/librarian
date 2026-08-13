@@ -47,6 +47,45 @@ quit binding on mount so hosted panels never define the meaning. Whatever we pic
 what happens to the *host's* keys while a panel is open — a `ModalScreen` currently hides all of
 them, which is why `a`/`n`/`e` are re-declared on the calendar modal by hand.
 
+### Replace icalPal with a Python CLI
+**Planned 2026-08-13 — full write-up in [icalpal-python-port.md](icalpal-python-port.md).**
+
+Prompted by the Calendar tool breaking that day. icalPal's logic was fine; Homebrew had autoremoved
+the *Ruby interpreter* its shebang points at, because an untrusted tap made the icalpal formula
+unreadable and its dependency therefore invisible. `brew install ruby` fixed it. The exposure is a
+toolchain Librarian does not control and cannot see, and it fails in a way that took real digging to
+diagnose.
+
+Short version of the analysis: icalPal contains no native code and never touches EventKit — it reads
+Apple's private `Calendar.sqlitedb` with read-only SQLite, which Python's stdlib does equally well. So
+unlike remctl, which needs 3,672 lines of Swift and Objective-C because it *writes* through EventKit,
+a port needs no bridge at all. The whole gem is 1,923 lines, its SQL is copyable verbatim, and the one
+hard part — expanding Apple's proprietary recurrence `specifier` — has two ways around it, including
+an `OccurrenceCache` table holding Apple's own pre-expanded occurrences that icalPal does not use.
+
+**Scope is Tier 1 only:** what Librarian actually consumes is one command, `eventsToday -o json`.
+Tier 3 parity is explicitly not the goal — `reminder.rb`'s 275 lines cover Reminders, and remctl
+already owns those.
+
+Two decisions already made, so they do not get relitigated mid-build:
+
+- **Its own repo, in the remctl mould** — not a module inside Librarian. The calendar code already
+  talks to a subprocess that emits JSON, so keeping that boundary makes the port a drop-in swap,
+  testable on its own, and keeps Apple's private schema quarantined behind one interface.
+- **Prototype `OccurrenceCache` before writing any RRULE code.** If Apple's own pre-expanded
+  occurrences cover what we need, the hardest 200 lines never get written. It is a cache, so its
+  coverage has to be checked against rule-based expansion first.
+
+Going in with eyes open about the real cost: a port starts at zero on birthday calendars and their
+`age` pseudo-property, subscribed calendars, the "Scheduled Reminders" pseudo-calendar, and invitation
+status — all of which mature icalPal handles today. Parity on the cases we actually use is the bar,
+not parity with icalPal.
+
+One small fix worth doing first, independent of the port and useful even if it stalls:
+`calendar.resolve_icalpal()` checks only that the binary exists and is executable, so a dangling
+shebang surfaces as `Could not run icalPal: No such file or directory` — which reads as "not
+installed" when the truth is "its interpreter is missing".
+
 ### ~~De-duplicate the taskpaper → markdown conversion~~ — dropped 2026-08-13
 `librarian/taskpaper.py` and `taskpapertui/widgets/preview.py` hold the same conversion, differing
 only in an arrow character in a docstring, and the plan was for TaskPaperTUI to own it.
