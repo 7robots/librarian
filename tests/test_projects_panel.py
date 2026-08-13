@@ -447,6 +447,61 @@ class TestDialogsWhileEmbedded:
             assert app.is_running
 
 
+@pytest.mark.skipif(
+    not hasattr(ProjectsPanel, "action_setup"),
+    reason="this projection predates the setup wizard",
+)
+class TestBackendSetupWhileEmbedded:
+    """projection's setup wizard has to work from inside Librarian.
+
+    It is the one dialog a *first-time* user meets, and the embed is where
+    projection is normally opened — so "configure it from the shell instead" is
+    not an answer available here.
+    """
+
+    async def test_comma_opens_setup_over_librarian(self, app, fake_backend):
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await open_panel(app, pilot)
+
+            await pilot.press("comma")
+            for _ in range(15):
+                await pilot.pause()
+                if type(app.screen).__name__ == "SetupModal":
+                    break
+
+            modal = app.screen
+            assert type(modal).__name__ == "SetupModal"
+            # Its own contract, on Librarian's screen stack.
+            assert [b.id for b in modal.query("Button")] == [
+                "btn-test",
+                "btn-cancel",
+                "btn-save",
+            ]
+            assert modal.query("Footer")
+            # And Librarian's own single-letter keys stay out of reach.
+            assert "s" not in modal.active_bindings
+            assert "u" not in modal.active_bindings
+
+    async def test_escape_returns_to_the_panel(self, app, fake_backend):
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await open_panel(app, pilot)
+
+            await pilot.press("comma")
+            for _ in range(15):
+                await pilot.pause()
+                if type(app.screen).__name__ == "SetupModal":
+                    break
+
+            await pilot.press("escape")
+            for _ in range(10):
+                await pilot.pause()
+
+            assert isinstance(app.screen, ProjectsModal)
+            assert app.is_running
+
+
 class TestRealUserDataIsNeverTouched:
     """The embed must not read or rewrite projection's real store.
 

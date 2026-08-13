@@ -40,10 +40,24 @@ process.** Smartsheet becomes one implementation of that interface rather than t
 subsumes the "split the panel into a public package" option below: with a real source interface, the
 whole app can be public and the Smartsheet specifics become configuration rather than a private fork.
 
-Starting points when we pick this up: `project_store.py`, `smartsheet_api.py`, and `sync.py` are where
-the Smartsheet assumptions live; `models.py` already has a `Project` type that looks close to the
-row abstraction; `secrets.py` hardcodes `op://Employee/smartsheet-api-key`, which becomes per-source
-config. Two approaches were considered and rejected for the *packaging* question: vendoring clones into Librarian's
+**Progress** (as of 2026-08-12): that work is essentially done in projection's own repo, tracked phase
+by phase in **projection's `docs/ROADMAP.md`** — read it there rather than duplicating it here. Phases
+0–5 have landed: a `Config` object, the local store as the source of record (schema v3, tombstones,
+per-field times), a `Backend` protocol with a field-level three-way merge, scriptable `[[hooks]]` in
+place of the built-in exec summary, provisioning with a first-run setup wizard, and **two backends
+behind the interface** — Smartsheet and Cloudflare D1. `backend = ""` (local-only, no credential, no
+network) is the default and fully supported.
+
+That means the "ships someone else's schema" objection is answered: the Smartsheet specifics are
+configuration, and a second implementation proved the interface is real rather than a description of
+the first. **The remaining gate before the repo can go public is the security review below** — after
+which the optional extra at the top of this section becomes declarable, and anyone can get the
+Projects panel with `uv sync --extra projects`.
+
+Worth knowing on this side: the setup wizard is a Textual dialog specifically so it works from inside
+Librarian's `ProjectsModal` — there is no terminal to prompt into there, and the embed is how projection
+usually gets opened. `,` opens it; `tests/test_projects_panel.py` pins that it behaves over Librarian's
+screen stack. Two approaches were considered and rejected for the *packaging* question: vendoring clones into Librarian's
 tree (trades the lockfile's reproducibility for "whatever HEAD was", does not help private access,
 and — since one distribution name can only be installed once — leaves two clones on disk with the
 wrong one silently authoritative), and git submodules (keeps pinning, but still needs credentials,

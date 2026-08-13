@@ -43,6 +43,14 @@ def isolate_projection_paths(monkeypatch, tmp_path):
     monkeypatch.setattr(
         projection_storage, "DEFAULT_STORAGE_DIR", tmp_path / "pdata"
     )
+    # Write the sandbox config, so the panel does not read this as projection's
+    # *first* run -- which opens its setup wizard over Librarian's modal. That
+    # behavior is projection's, and is tested there; here it would just cover the
+    # panel every test is trying to look at. `test_projects_panel.py` opens the
+    # wizard deliberately, by key, to check it works over Librarian.
+    config_file = tmp_path / "pconfig" / "config.toml"
+    config_file.parent.mkdir(parents=True, exist_ok=True)
+    config_file.write_text('backend = ""\n')
 
 
 @pytest.fixture

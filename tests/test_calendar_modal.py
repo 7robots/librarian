@@ -256,10 +256,16 @@ class TestForwardedBindings:
             await pilot.pause()
 
             await pilot.press("n")
-            for _ in range(15):
+            # Waiting for the *condition* rather than a fixed number of pauses:
+            # the note is written by a worker, and a count that is enough on an
+            # idle machine loses the race under a full suite run.
+            created: list = []
+            for _ in range(50):
                 await pilot.pause()
+                created = list(config.scan_directory.glob("*-Standup.md"))
+                if created and opened:
+                    break
 
-            created = list(config.scan_directory.glob("*-Standup.md"))
             assert created, "pressing n in the calendar should write a meeting note"
             body = created[0].read_text()
             assert "#meetings" in body
