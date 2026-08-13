@@ -91,6 +91,23 @@ moment after the cursor stops; longer ones say so in the header and complete whe
 focused, since paying 1.7 s for a pause is the freeze this removes. **Scrolling that folder: 3484 ms →
 53 ms.**
 
+**A further step was designed, measured, and deliberately not taken** (Jefferson, 2026-08-13). The
+remaining cost is the ~1.7 s to render the longest notes in full, which is now paid only when you
+focus the pane. It could be removed by rendering with **Rich's `Markdown` inside a `Static`** while
+browsing — one widget instead of 4197, measured at **20 ms for the note that takes 1927 ms as a
+Textual widget** — and swapping in the real `Markdown` widget when the pane takes focus.
+
+It is not being done, for two reasons worth keeping written down:
+
+- **What it buys is a pause you asked for.** After the fix above, that 1.7 s only happens on a note
+  you deliberately focused to read. Trading for it is not obviously right.
+- **What it costs is wiki links.** Rich renders links as terminal hyperlinks, which Textual cannot
+  intercept — so `[[wiki link]]` clicking, a core feature here, would not work while browsing. The
+  swap also re-renders visibly, since Rich and Textual style markdown differently.
+
+Revisit if the focus-time render starts to grate, if notes get much longer, or if wiki-link
+navigation moves to a keyboard-driven "follow link" command, which would make the trade free.
+
 Still worth measuring, and now with a method that worked — measure the real vault, split the path into
 parts, and distrust the obvious suspect:
 
@@ -168,6 +185,12 @@ projection needs this pass **before** it goes public, so it pairs naturally with
 abstraction work above.
 
 ## Deferred
+
+### Render the preview with Rich while browsing
+Designed and measured on 2026-08-13, then deferred on purpose — the full write-up lives with the
+performance numbers under **Performance review** above, since the reasoning only makes sense next to
+them. Short version: 20 ms instead of 1927 ms for the worst note, at the cost of wiki-link clicking
+while browsing, to remove a pause that now only happens when you ask for it.
 
 ### Expand the Lucide → Nerd Font glyph table
 `icons.NERD_GLYPHS` covers 66 of Lucide's 2,025 icon names; anything else falls back to a plain
