@@ -97,7 +97,14 @@ class RemindersModal(ModalScreen[None]):
         Binding("q", "close", "Close reminders", priority=True),
     ]
 
-    def __init__(self, client, **kwargs) -> None:
+    def __init__(self, client=None, **kwargs) -> None:
+        """`client` is for tests only — production passes nothing.
+
+        remtui resolves the `remctl` binary and its key profile from its own
+        settings, so a client built here would carry neither. The tests pass a
+        stub to keep the real Reminders store out of the suite; that is the only
+        reason this parameter exists.
+        """
         super().__init__(**kwargs)
         self._client = client
 

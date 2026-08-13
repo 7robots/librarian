@@ -320,6 +320,19 @@ class TestTheHostDoesNotBuildTheClient:
     bug in the projects embed — so these two deliberately do not.
     """
 
+    def test_the_modal_can_be_built_with_no_arguments(self):
+        """The call site passes none, so the constructor must accept none.
+
+        This is not hypothetical: the first version of this change updated the
+        call site to `RemindersModal()` while the constructor still *required* a
+        client. The action swallows exceptions to fall back to the executable, so
+        the panel silently stopped opening — every test here passed, including the
+        source check below, because they all construct the modal with a client.
+        """
+        from librarian.widgets.reminders_modal import RemindersModal
+
+        assert RemindersModal() is not None
+
     def test_the_modal_is_opened_without_a_client(self):
         """A future edit that "helpfully" passes one would pass every other test."""
         from pathlib import Path
