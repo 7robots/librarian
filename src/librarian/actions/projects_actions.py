@@ -91,12 +91,13 @@ class ProjectsActionsMixin:
             return False
 
         try:
-            from projection.smartsheet_api import SmartsheetClient
-
-            # The client loads its Smartsheet token lazily -- the first request
-            # shells out to 1Password on a worker thread -- so constructing it
-            # here cannot block the UI or prompt for Touch ID at startup.
-            self.push_screen(ProjectsModal(SmartsheetClient()))
+            # Deliberately **no client**. Librarian used to construct projection's
+            # `SmartsheetClient()` here, which looked harmless and broke the embed:
+            # which credential to read comes from projection's own config
+            # (`token_ref`), a bare client carries none, and a client the panel is
+            # handed is used as-is — so the panel could not find a token that the
+            # standalone app found fine. The panel builds its own, and closes it.
+            self.push_screen(ProjectsModal())
         except Exception as exc:  # noqa: BLE001 - fall back rather than fail
             logger.warning("Could not open the projects panel: %s", exc)
             return False

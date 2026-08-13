@@ -502,6 +502,58 @@ class TestBackendSetupWhileEmbedded:
             assert app.is_running
 
 
+class TestTheHostDoesNotBuildTheClient:
+    """The embed must not construct projection's Smartsheet client.
+
+    Every other test in this file passes a stub client, which is exactly the
+    thing that was wrong: Librarian built a bare `SmartsheetClient()`, and since
+    projection uses a client it is handed as-is, the panel could not find the
+    credential `token_ref` names — "No Smartsheet API token configured" in the
+    embed while the standalone app worked. A stub hides that completely, so these
+    two tests deliberately do not use one.
+    """
+
+    async def test_the_action_hands_over_no_client(self, app, fake_backend, tmp_path):
+        """What `t`/Projects actually does, with nothing stubbed in between."""
+        from projection.panel import ProjectsPanel as RealPanel
+
+        # projection's sandboxed config (see conftest) names a reference, as a
+        # real install does.
+        config_file = tmp_path / "pconfig" / "config.toml"
+        config_file.write_text(
+            'backend = "smartsheet"\n[backends.smartsheet]\n'
+            'sheet_id = 1\ntoken_ref = "op://Sandbox/sheets/token"\n'
+        )
+
+        async with app.run_test(size=(120, 38)) as pilot:
+            await pilot.pause()
+            app.action_launch_projects()
+            for _ in range(20):
+                await pilot.pause()
+                panels = app.screen.query("#projects-panel")
+                if panels:
+                    break
+
+            panel = app.screen.query_one("#projects-panel", RealPanel)
+            # It built its own, from projection's config — not one of ours.
+            assert panel._owns_client is True
+            assert panel._client._credential.secret_ref == "op://Sandbox/sheets/token"
+
+    def test_the_modal_is_opened_without_a_client(self):
+        """Belt and braces: the call site itself, read as source.
+
+        A future edit that "helpfully" passes a client would pass every other
+        test in this file.
+        """
+        from pathlib import Path
+
+        import librarian.actions.projects_actions as actions
+
+        source = Path(actions.__file__).read_text()
+        assert "ProjectsModal()" in source, "the host must hand over no client"
+        assert "ProjectsModal(SmartsheetClient" not in source
+
+
 class TestRealUserDataIsNeverTouched:
     """The embed must not read or rewrite projection's real store.
 

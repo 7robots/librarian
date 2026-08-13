@@ -82,6 +82,13 @@ class ProjectsModal(ModalScreen[None]):
     ]
 
     def __init__(self, client=None, **kwargs) -> None:
+        """`client` is for tests only — production passes nothing.
+
+        Which credential projection reads comes from projection's config, so
+        handing it a client built here means handing it one with no credential
+        reference at all. The tests pass a stub to keep the network and 1Password
+        out of the suite; that is the only reason this parameter exists.
+        """
         super().__init__(**kwargs)
         self._client = client
 
