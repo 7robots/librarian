@@ -44,3 +44,6 @@ Thumbs.db
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Scratch file that keeps reappearing in the repo root during manual testing.
+test.md
