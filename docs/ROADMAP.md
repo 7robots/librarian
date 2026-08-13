@@ -5,67 +5,24 @@ rather than scattering it across READMEs or issue comments.
 
 ## Planned
 
-### Give projection a backend abstraction, then publish it
-The Projects tool is **built and working** — `ProjectsModal`, `[tools] projects`, the soft import,
-and the suspend-and-launch fallback all ship, with the embed verified against projection's own fakes.
-What is missing is a way for anyone to *install* it.
+### ~~Give projection a backend abstraction, then publish it~~ — done 2026-08-13
+The Projects panel is installable by anyone: `uv sync --extra projects`, declared like remtui's.
 
-The optional extra would be:
+projection went through six phases to get there (a `Config` object, the local store as the source of
+record, a `Backend` protocol with a field-level three-way merge, scriptable hooks, provisioning with
+a first-run setup wizard, and a second backend in Cloudflare D1), then a security review, and is now
+public at **https://github.com/7robots/projection**. Its own `docs/ROADMAP.md` carries the phase
+history and what remains there; nothing about it is tracked here any more.
 
-```toml
-[project.optional-dependencies]
-projects = ["projection @ git+https://github.com/7robots/projection.git ; python_version >= '3.11'"]
-```
+Two things worth keeping on this side:
 
-but that repository is **private**, so declaring it in a public project means `uv sync --extra
-projects` fails for anyone without access — unlike remtui, which is public. So it is deliberately
-*not* declared, and `uv pip install -e ~/GitHub/projection` installs it by hand.
-
-**The install friction is fixed**: `install.sh` now syncs `--inexact`, so it no longer deletes a
-hand-installed projection (it also passes `--extra reminders`, which it never did, so a fresh install
-silently lacked remtui and fell back to the handoff). A bare `uv sync` is still exact and will remove
-it — use `./install.sh` or `uv sync --inexact`.
-
-What remains is only that **anyone without repo access cannot get the Projects panel** and falls back
-to the executable.
-
-**Why projection is private, and the intended direction** (Jefferson, 2026-08-11): the repo has stayed
-private because it is heavily predicated on one team's use of a specific Smartsheet as the backing
-source of truth — the sheet's identity, its column layout, and the vocabulary around it are baked in.
-Publishing it as-is would ship someone else's schema.
-
-The intended shape before going public: **projection works against an abstraction layer — a table with
-consistent column headings — and supports different backend data sources chosen through a simple setup
-process.** Smartsheet becomes one implementation of that interface rather than the assumption. That
-subsumes the "split the panel into a public package" option below: with a real source interface, the
-whole app can be public and the Smartsheet specifics become configuration rather than a private fork.
-
-**Progress** (as of 2026-08-12): that work is essentially done in projection's own repo, tracked phase
-by phase in **projection's `docs/ROADMAP.md`** — read it there rather than duplicating it here. Phases
-0–5 have landed: a `Config` object, the local store as the source of record (schema v3, tombstones,
-per-field times), a `Backend` protocol with a field-level three-way merge, scriptable `[[hooks]]` in
-place of the built-in exec summary, provisioning with a first-run setup wizard, and **two backends
-behind the interface** — Smartsheet and Cloudflare D1. `backend = ""` (local-only, no credential, no
-network) is the default and fully supported.
-
-That means the "ships someone else's schema" objection is answered: the Smartsheet specifics are
-configuration, and a second implementation proved the interface is real rather than a description of
-the first. **The remaining gate before the repo can go public is the security review below** — after
-which the optional extra at the top of this section becomes declarable, and anyone can get the
-Projects panel with `uv sync --extra projects`.
-
-Worth knowing on this side: the setup wizard is a Textual dialog specifically so it works from inside
-Librarian's `ProjectsModal` — there is no terminal to prompt into there, and the embed is how projection
-usually gets opened. `,` opens it; `tests/test_projects_panel.py` pins that it behaves over Librarian's
-screen stack. Two approaches were considered and rejected for the *packaging* question: vendoring clones into Librarian's
-tree (trades the lockfile's reproducibility for "whatever HEAD was", does not help private access,
-and — since one distribution name can only be installed once — leaves two clones on disk with the
-wrong one silently authoritative), and git submodules (keeps pinning, but still needs credentials,
-and uv rejects `sources` in `uv.toml`, so a machine-local path override is not expressible).
-
-Note the two wrinkles that prompted this are now settled — `SmartsheetClient` loads its 1Password
-token lazily on the first request, so constructing it cannot block or prompt for Touch ID at startup,
-and the panel degrades to a message when Smartsheet is unreachable.
+- **The suspend-and-launch fallback stays.** It is not vestigial: projection needs Python 3.11+, so
+  the extra carries a marker and the panel is simply unavailable below that — the same reason remtui's
+  extra carries one for 3.12.
+- **This machine runs a private fork** (`7robots/arch-projection`, cloned at `~/GitHub/arch-projection`)
+  so team-specific customizations stay versioned without shipping publicly. It is installed editable,
+  which survives `./install.sh` — that syncs `--inexact` — but a bare `uv sync` is exact and would
+  replace it with the published package.
 
 ### Rethink what `q` means inside an embedded panel
 **Needs a design conversation before any code.** Right now `q` is overloaded and the behavior reads

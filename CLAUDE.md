@@ -652,18 +652,16 @@ projects = true
 projects = ""   # empty = find "projection" on PATH
 ```
 
-### The dependency is deliberately undeclared
-remtui is public and ships as `uv sync --extra reminders`. projection's repository is **private**, so
-declaring the same kind of extra would make `uv sync --extra projects` fail for anyone without
-access. It is installed by hand instead:
+### The dependency is declared, as of 2026-08-13
+`uv sync --extra projects` installs it, exactly like remtui. It was deliberately *undeclared* for a
+long time because projection's repository was private, and declaring it would have made that command
+fail for anyone without access. projection is public now, so the extra is ordinary.
 
-```bash
-uv pip install -e /path/to/projection
-```
-
-Consequence worth remembering: `uv sync` and `./install.sh` drop the package again, since it is not
-in the lockfile — re-run the `uv pip install` after either. The fallback is therefore the *common*
-path here, not a rare one. See `docs/ROADMAP.md` for the options.
+Two things left over from that era are worth knowing. The suspend-and-launch fallback is **not**
+vestigial: projection needs Python 3.11+, so the marker on the extra keeps librarian installable
+below that, with the panel simply unavailable. And a hand-installed editable checkout — which is how
+this machine runs it, pointed at a private fork — survives `./install.sh` because it syncs
+`--inexact`; a bare `uv sync` is exact and would replace it with the published version.
 
 ### `priority=True` on `q` is load-bearing here
 Unlike `CalendarModal`, where the flag is defensive, `ProjectsPanel` binds `q -> app.quit` itself and

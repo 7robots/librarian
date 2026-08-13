@@ -79,7 +79,7 @@ nothing breaks if you never install any of them.
 | [Obsidian Notebook Navigator](https://github.com/johansan/notebook-navigator) | the plugin, in a vault | Folder icons and colors mirrored from Obsidian |
 | [icalPal](https://github.com/ajrosen/icalPal) | `brew tap ajrosen/tap && brew install icalPal` | Today's meetings, linkable to notes |
 | [remtui](https://github.com/7robots/remtui) | remtui + [remctl](https://github.com/viticci/remctl) | Apple Reminders, in a full-screen handoff |
-| [projection](https://github.com/7robots/projection) | projection (private repo) + a Smartsheet token | Smartsheet projects, in a panel |
+| [projection](https://github.com/7robots/projection) | `uv sync --extra projects` (Python 3.11+); a backend token only if you sync with one | Projects, in a panel |
 | A TaskPaper TUI | any `.taskpaper` editor on your PATH | A `.taskpaper` view, and `e` opening it in that editor |
 
 ### Why they are opt-in
@@ -203,19 +203,17 @@ projects = ""   # or a path; empty finds "projection" on PATH
 Select **Projects** and [projection](https://github.com/7robots/projection) opens as a panel over the
 Files and Preview panels, the same way Reminders does; `q` closes it.
 
-Unlike remtui, projection is **not** declared as an optional dependency — its repository is private,
-so `uv sync --extra ...` would fail for anyone without access. Install it by hand instead:
+Install it the same way as remtui:
 
 ```bash
-uv pip install -e /path/to/projection
+uv sync --extra projects
 ```
 
-That install now survives `./install.sh`, which syncs with `--inexact` so it does not delete packages
-it did not put there. A bare `uv sync` **is** exact and still removes it, so prefer `./install.sh` (or
-`uv sync --inexact`) when updating. Without the package, Librarian falls back to suspending and
-running the `projection` executable.
+Without the package, Librarian falls back to suspending and running the `projection` executable — the
+handoff still exists because projection needs Python 3.11+.
 
-Projects live in Smartsheet rather than in files, so nothing here touches your notes or the index.
+Projects live in projection's own store (and optionally a backend it syncs with), so nothing here
+touches your notes or the index.
 
 ## Keybindings
 

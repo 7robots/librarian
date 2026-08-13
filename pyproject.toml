@@ -19,6 +19,10 @@ dependencies = [
 # The marker keeps librarian installable on 3.10/3.11, where remtui (3.12+)
 # cannot be resolved; the panel simply is not available there.
 reminders = ["remtui @ git+https://github.com/7robots/remtui.git ; python_version >= '3.12'"]
+# projection is public as of 2026-08-13, so this can finally be declared. It was
+# deliberately absent while the repository was private: declaring it then would
+# have made `uv sync --extra projects` fail for anyone without access.
+projects = ["projection @ git+https://github.com/7robots/projection.git ; python_version >= '3.11'"]
 
 [project.scripts]
 librarian = "librarian.__main__:main"
