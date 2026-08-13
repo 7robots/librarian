@@ -11,6 +11,7 @@ optional dependency, and Librarian must run without it.
 from __future__ import annotations
 
 import inspect
+import logging
 
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -27,14 +28,32 @@ FOOTER_HEIGHT = 1
 # where the right-hand panels do.
 SIDEBAR_WIDTH_PERCENT = 25
 
+logger = logging.getLogger(__name__)
+
 
 def is_available() -> bool:
-    """Whether remtui is installed and its panel can be mounted."""
+    """Whether remtui is installed *and usable*, so its panel can be mounted.
+
+    Importable is not enough: remtui shells out to `remctl`, and a panel mounted
+    without it can only fail on its first call — by which point the
+    suspend-and-launch fallback is no longer an option. `remctl_found()` answers
+    for the binary remtui itself would run, honouring `$REMTUI_REMCTL`, so a
+    missing one falls back to the executable and remtui's own install message.
+
+    Guarded with `getattr`: the helper is newer than this embed, and an older
+    remtui should keep working rather than lose the panel entirely.
+    """
     try:
         import remtui.panel  # noqa: F401
+        from remtui import client as remtui_client
     except Exception:
         # ImportError, but also anything remtui raises at import time -- a
         # missing optional dependency must never take Librarian down.
+        return False
+
+    found = getattr(remtui_client, "remctl_found", None)
+    if found is not None and not found():
+        logger.debug("remctl is not installed; falling back to the executable")
         return False
     return True
 

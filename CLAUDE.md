@@ -596,6 +596,27 @@ reminders = ""   # empty = find "remtui" on PATH
 on PATH) and runs it inside `with self.suspend():` — the same pattern `action_edit` uses for editors.
 A missing executable notifies rather than launching.
 
+### A host hands the guest nothing
+Both embedded panels are constructed with **no arguments beyond the frame's own**.
+This is a contract, learned twice the hard way:
+
+- Librarian built `SmartsheetClient()` for projection and `RemctlClient()` for
+  remtui. Both look harmless; both bypass the guest's own configuration. projection
+  reads *which 1Password reference* from its config, so the panel could not find a
+  credential the standalone app found fine. remtui reads *which `remctl` binary*
+  from `$REMTUI_REMCTL` and its key profile from its config, so a custom binary and
+  `profile = "vim"` were silently ignored in the embed.
+- Neither was caught by the embed tests, because those pass a stub client — the
+  very thing that was wrong. Each panel's tests now include a **call-site check**
+  that reads the action's source, since a future edit passing a client would
+  otherwise satisfy every other test.
+- `is_available()` answers "importable *and usable*". For remtui that means asking
+  `remctl_found()` — a panel mounted without the binary can only fail on its first
+  call, and by then the suspend-and-launch fallback is gone.
+
+The guest resolves; the host frames. If a panel needs something the host has, the
+host passes *that*, not a constructed object.
+
 ### Embedded panel, with a handoff fallback
 `action_launch_reminders` prefers the embedded panel and falls back to the executable:
 

@@ -89,9 +89,12 @@ class RemindersActionsMixin:
             return False
 
         try:
-            from remtui.client import RemctlClient
-
-            self.push_screen(RemindersModal(RemctlClient()))
+            # Deliberately **no client**, for the reason the projects panel takes
+            # none: remtui resolves the `remctl` binary from `$REMTUI_REMCTL` and
+            # its key profile from its own config, and a client built here carries
+            # neither -- so a custom binary worked standalone and was ignored in
+            # the embed. remtui's README used to show this the wrong way round.
+            self.push_screen(RemindersModal())
         except Exception as exc:  # noqa: BLE001 - fall back rather than fail
             logger.warning("Could not open the reminders panel: %s", exc)
             return False

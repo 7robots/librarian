@@ -311,3 +311,38 @@ class TestDialogsWhileEmbedded:
 
             assert isinstance(app.screen, RemindersModal)
             assert app.is_running
+
+
+class TestTheHostDoesNotBuildTheClient:
+    """The same contract the projects panel needed, for the same reason.
+
+    Every other test here passes a stub client — which is precisely what hid the
+    bug in the projects embed — so these two deliberately do not.
+    """
+
+    def test_the_modal_is_opened_without_a_client(self):
+        """A future edit that "helpfully" passes one would pass every other test."""
+        from pathlib import Path
+
+        import librarian.actions.reminders_actions as actions
+
+        source = Path(actions.__file__).read_text()
+        assert "RemindersModal()" in source, "the host must hand over no client"
+        assert "RemindersModal(RemctlClient" not in source
+
+    def test_a_panel_given_no_client_honours_remtuis_own_binary(self, monkeypatch):
+        """`$REMTUI_REMCTL` applies in the embed, not only standalone."""
+        from remtui.panel import RemindersPanel
+
+        monkeypatch.setenv("REMTUI_REMCTL", "/opt/custom/remctl")
+        assert RemindersPanel().client.command == ("/opt/custom/remctl",)
+
+    def test_availability_follows_the_binary_remtui_would_run(self, monkeypatch):
+        """So a missing remctl hands off to the executable instead of a dead panel."""
+        from librarian.widgets.reminders_modal import is_available
+
+        monkeypatch.setenv("REMTUI_REMCTL", "/definitely/not/here/remctl")
+        assert is_available() is False
+
+        monkeypatch.setenv("REMTUI_REMCTL", "sh")
+        assert is_available() is True
