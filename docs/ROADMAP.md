@@ -48,7 +48,9 @@ what happens to the *host's* keys while a panel is open — a `ModalScreen` curr
 them, which is why `a`/`n`/`e` are re-declared on the calendar modal by hand.
 
 ### Replace icalPal with a Python CLI
-**Planned 2026-08-13 — full write-up in [icalpal-python-port.md](icalpal-python-port.md).**
+**Built 2026-08-14 as [calctl](https://github.com/7robots/calctl) (`~/GitHub/calctl`). Full write-up
+in [icalpal-python-port.md](icalpal-python-port.md).** What remains is the Librarian-side swap; see
+*Switch the Calendar tool over to calctl* below. The analysis that led here is kept for the record.
 
 Prompted by the Calendar tool breaking that day. icalPal's logic was fine; Homebrew had autoremoved
 the *Ruby interpreter* its shebang points at, because an untrusted tap made the icalpal formula
@@ -67,24 +69,55 @@ an `OccurrenceCache` table holding Apple's own pre-expanded occurrences that ica
 Tier 3 parity is explicitly not the goal — `reminder.rb`'s 275 lines cover Reminders, and remctl
 already owns those.
 
-Two decisions already made, so they do not get relitigated mid-build:
+Two decisions were made up front, and both held:
 
 - **Its own repo, in the remctl mould** — not a module inside Librarian. The calendar code already
   talks to a subprocess that emits JSON, so keeping that boundary makes the port a drop-in swap,
   testable on its own, and keeps Apple's private schema quarantined behind one interface.
 - **Prototype `OccurrenceCache` before writing any RRULE code.** If Apple's own pre-expanded
-  occurrences cover what we need, the hardest 200 lines never get written. It is a cache, so its
-  coverage has to be checked against rule-based expansion first.
+  occurrences cover what we need, the hardest 200 lines never get written.
 
-Going in with eyes open about the real cost: a port starts at zero on birthday calendars and their
-`age` pseudo-property, subscribed calendars, the "Scheduled Reminders" pseudo-calendar, and invitation
-status — all of which mature icalPal handles today. Parity on the cases we actually use is the bar,
-not parity with icalPal.
+**How it turned out (2026-08-14).**
 
-One small fix worth doing first, independent of the port and useful even if it stalls:
+`OccurrenceCache` was prototyped first and **rejected on measurement**: only 265 of 763 recurring
+series in the real database have any rows there, and over ±60 days it misses 98 of 813 events. Worse,
+an absence in it cannot be distinguished from "no event", so it cannot even serve as a fast path with
+rule expansion as the fallback — you would have to do the expansion anyway to know. The RRULE mapping
+was written, using `dateutil.rrule`; that is calctl's one non-stdlib dependency.
+
+Verified against icalPal over ±60 days: **824 occurrences from calctl, 848 from icalPal**, with every
+difference arbitrated against Apple's own `OccurrenceCache` as an independent oracle. calctl was
+correct in all of them. Four icalPal bugs account for the gap — `interval` ignored for
+specifier-based monthly rules (quarterly meetings appearing monthly), monthly series double-reported
+across a DST change, recurrence end ignored for all-day series, and `sctime` lagging a day from day
+two of a multi-day all-day event, which is what put those events on the wrong day in Librarian.
+
+The eyes-open cost turned out smaller than expected. Birthday calendars work, because their floating
+`_float` timestamps are handled by the same conversion all-day events need; the `age`
+pseudo-property is not ported, and Librarian never displayed it. Reminders remain remctl's job.
+
+One wart on our side, still worth fixing whichever backend is in use:
 `calendar.resolve_icalpal()` checks only that the binary exists and is executable, so a dangling
 shebang surfaces as `Could not run icalPal: No such file or directory` — which reads as "not
 installed" when the truth is "its interpreter is missing".
+
+### Switch the Calendar tool over to calctl
+**Open, 2026-08-14.** calctl is a verified drop-in: setting `[calendar] icalpal_path = "calctl"`
+today produces identical events with identical UUIDs, so meeting-note associations survive and no
+Librarian code has to change. Confirmed end-to-end through `CalendarModal`.
+
+What is left is naming and defaults, which is a real decision rather than a mechanical edit:
+
+- `[calendar] icalpal_path` names a specific third-party tool. A backend-agnostic key
+  (`[calendar] command`) would read better, and the migration has a precedent to copy — `[calendar]
+  enabled` is still honored when `[tools] calendar` is absent.
+- `calendar.py`'s `INSTALL_HINT` points at `brew tap ajrosen/tap`, and its error messages all say
+  "icalPal".
+- Whether calctl becomes the default (found on PATH, as remtui and projection are resolved) or stays
+  opt-in behind an explicit path.
+
+Worth deciding together rather than assuming: the current setup already works, so there is no
+pressure to rush it.
 
 ### ~~De-duplicate the taskpaper → markdown conversion~~ — dropped 2026-08-13
 `librarian/taskpaper.py` and `taskpapertui/widgets/preview.py` hold the same conversion, differing

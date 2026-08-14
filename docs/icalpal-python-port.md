@@ -1,8 +1,9 @@
 # Replacing icalPal with a Python CLI
 
-Feasibility analysis, 2026-08-13. **Decided: this is happening** — the roadmap entry that points here
-is under *Planned*, scoped to Tier 1 below. The analysis is kept in full, including the arguments
-against, so the reasoning behind the scope is legible later.
+Feasibility analysis, 2026-08-13. **Built 2026-08-14 as [calctl](https://github.com/7robots/calctl).**
+The analysis is kept in full, including the arguments against, so the reasoning behind the scope stays
+legible. See *[What actually happened](#what-actually-happened)* at the end for where it was right and
+where it was wrong.
 
 Read against icalPal **4.1.1** as installed (`/opt/homebrew/Cellar/icalpal/4.1.1/gems/icalPal-4.1.1`),
 which is the published source of https://github.com/ajrosen/icalPal, plus the live
@@ -218,3 +219,63 @@ The risk that stays live is the one in the section above: the schema is private 
 That is not new — we already depend on it through icalPal — but after the port it becomes *our*
 maintenance rather than someone else's. Pin the query, keep a fixture database, fail loudly on a
 missing column.
+
+## What actually happened
+
+Built 2026-08-14 as [calctl](https://github.com/7robots/calctl). Recorded here against the
+predictions above, because the two places this analysis was wrong are the interesting part.
+
+### Right
+
+- **No native code, no EventKit, no PyObjC.** The whole thing is stdlib `sqlite3` plus
+  `dateutil.rrule`. Full Disk Access is inherited from the terminal, exactly as predicted, and no TCC
+  prompt was ever needed.
+- **The SQL was copyable.** The query went over nearly verbatim; only the column list was pinned down
+  and aliased.
+- **Tier 1 was the right scope.** `eventsToday -o json` is genuinely all Librarian consumes.
+- **A separate repo made the swap free.** Librarian needs *no code change at all*: pointing
+  `icalpal_path` at calctl yields identical events with identical UUIDs, so existing meeting-note
+  associations survive.
+
+### Wrong, in the useful direction
+
+**`OccurrenceCache` is unusable, and the caveat understated it.** The analysis said to prototype it
+first and check its coverage. Measured: only **265 of 763** recurring series have any rows there at
+all, and over ±60 days the table misses **98 of 813** events. The deeper problem is not the miss rate
+but that *an absence in the cache is indistinguishable from "no event"* — so it cannot serve even as a
+fast path with rule expansion as a fallback, because you would have to run the expansion anyway to
+know whether to trust the miss. The suggestion of "fast path with fallback" was wrong on its own
+terms. The recurrence code got written, which is what "prototype first" was meant to avoid, but the
+prototype was still worth it: it cost an hour and settled the design question with data.
+
+**icalPal is less correct than assumed.** "Trading a known-good implementation for a new one" was
+listed as the strongest argument for staying put. It is not, because the known implementation is not
+good. Over ±60 days calctl reports 824 occurrences to icalPal's 848, and every difference was
+arbitrated against Apple's own `OccurrenceCache` — an independent oracle, since Calendar.app writes
+it rather than either tool. calctl was right every time. Four distinct icalPal bugs:
+
+1. **`interval` ignored for specifier-based monthly rules.** With no `O=` clause icalPal expands the
+   specifier across all twelve months, gated only by the query window, so a quarterly meeting shows
+   up monthly.
+2. **Monthly series double-reported across a DST change** — the same occurrence twice, an hour apart.
+3. **Recurrence end ignored for all-day series.** One series that ended in July 2026 was still being
+   reported in October.
+4. **`sctime` lags a day on multi-day all-day events.** Day one is stamped UTC; from day two the
+   value is re-derived in local time, so `sctime` and `sdate` disagree. Librarian reads `sctime`, so
+   this is a bug users could already see: multi-day all-day events landed on the wrong day.
+
+There is also a consequence of bug 1 worth naming on its own: because the expansion is gated by the
+query window, **icalPal's answer for a given day changes depending on the range you asked for.**
+
+### Things the analysis did not anticipate
+
+- **All-day events must be compared by date, not by instant.** They are stored as midnight UTC, and a
+  local-time window overlaps two of them — which double-counts a multi-day trip on its first day and
+  leaks *tomorrow's* birthday into today's list. calctl compares dates for all-day events. This was
+  caught by a test, not by reading icalPal.
+- **Birthdays were cheaper than feared.** They were listed as a risk. In practice their `_float`
+  timestamps use the same conversion all-day events already need, so they came free. The `age`
+  pseudo-property is not ported, and Librarian never displayed it.
+- **The schema guard earned itself immediately.** `check_schema()` failed on its first run — because
+  SQLite only reports `ROWID` in `PRAGMA table_info` when a table declares it. A real false positive,
+  found in a minute, which is the behavior wanted from a loud check.
