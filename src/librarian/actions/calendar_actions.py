@@ -76,7 +76,7 @@ class CalendarActionsMixin:
     def _background_fetch_events(self) -> list[CalendarEvent]:
         """Fetch calendar events in background thread."""
         return fetch_todays_events(
-            icalpal_path=self.config.calendar.icalpal_path,
+            command=self.config.calendar.command,
             calendar_name=self.config.calendar.calendar_name,
         )
 

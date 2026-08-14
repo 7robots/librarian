@@ -77,7 +77,7 @@ nothing breaks if you never install any of them.
 |---|---|---|
 | [Nerd Font](https://www.nerdfonts.com/) | a Nerd Font in your terminal | Monochrome folder icons that take on folder colors |
 | [Obsidian Notebook Navigator](https://github.com/johansan/notebook-navigator) | the plugin, in a vault | Folder icons and colors mirrored from Obsidian |
-| [icalPal](https://github.com/ajrosen/icalPal) | `brew tap ajrosen/tap && brew install icalPal` | Today's meetings, linkable to notes |
+| [calctl](https://github.com/7robots/calctl) | `./install.sh` in the calctl repo (or icalPal, still supported) | Today's meetings, linkable to notes |
 | [remtui](https://github.com/7robots/remtui) | remtui + [remctl](https://github.com/viticci/remctl) | Apple Reminders, in a full-screen handoff |
 | [projection](https://github.com/7robots/projection) | `uv sync --extra projects` (Python 3.11+); a backend token only if you sync with one | Projects, in a panel |
 | A TaskPaper TUI | any `.taskpaper` editor on your PATH | A `.taskpaper` view, and `e` opening it in that editor |
@@ -93,7 +93,7 @@ have it installed.
 [tools]
 taskpaper = false   # file-based tasks, via taskpapertui
 reminders = false   # Apple Reminders, via remtui
-calendar = false    # today's meetings, via icalPal
+calendar = false    # today's meetings, via calctl
 projects = false    # Smartsheet projects, via projection
 ```
 
@@ -138,7 +138,7 @@ folder's color while leaving its icon to the plugin. To ignore the plugin entire
 enabled = false
 ```
 
-### Calendar (icalPal)
+### Calendar (calctl)
 
 ```toml
 [tools]
@@ -146,13 +146,25 @@ calendar = true
 
 [calendar]
 calendar_name = ""     # empty = all calendars
-icalpal_path = ""      # empty = find icalPal on PATH
+command = ""           # empty = auto-detect: calctl, then icalPal
 ```
+
+Meetings come from a small command-line backend that prints them as JSON. Two work interchangeably:
+[calctl](https://github.com/7robots/calctl), which is preferred, and
+[icalPal](https://github.com/ajrosen/icalPal), which is still supported so existing setups keep
+running. With `command` empty the first one found on your PATH is used, so installing calctl switches
+over with no config change. A bare name is looked up on PATH; a path is used as given.
+
+calctl is preferred for two reasons. It needs only Python — icalPal is a Ruby gem, and the Ruby it
+pointed at was silently removed by a Homebrew cleanup once, which is what prompted writing calctl in
+the first place. And it is more accurate: verifying it against icalPal turned up four icalPal bugs,
+including one visible here, where multi-day all-day events landed on the wrong day. See
+[docs/icalpal-python-port.md](docs/icalpal-python-port.md).
 
 Select **Calendar** and today's meetings open as a panel over the Files and Preview panels, with your
 folder tree and tag list still visible; `q` closes it. Navigate the meetings to preview a linked note
 or the meeting's own details; press `a` to link a meeting to an existing `#meetings` file, or `n` to
-create a meeting note from a template. When icalPal cannot run, the panel says why — it will not
+create a meeting note from a template. When the backend cannot run, the panel says why — it will not
 quietly show you an empty day.
 
 ### Reminders (remtui)

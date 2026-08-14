@@ -18,7 +18,7 @@ src/librarian/
 ├── wikilink.py          # Wiki link preprocessing and parsing
 ├── navigation.py        # Navigation state management for wiki links
 ├── export.py            # Export to HTML functionality (with sanitization)
-├── calendar.py          # icalPal wrapper for fetching calendar events
+├── calendar.py          # calendar backend wrapper (calctl, or icalPal) + JSON parsing
 ├── calendar_store.py    # Event-to-file association storage (sidecar JSON)
 ├── icons.py             # Icon-name -> terminal glyph tables (Nerd Font / emoji) + style detection
 ├── appearance.py        # Layered folder appearance: config > Notebook Navigator > defaults
@@ -229,7 +229,8 @@ class TagConfig:
 @dataclass
 class CalendarConfig:
     calendar_name: str = ""  # empty = all calendars
-    icalpal_path: str = ""   # empty = auto-detect
+    command: str = ""        # backend command/path; empty = auto-detect (calctl, then icalPal)
+    # Was `icalpal_path`; that key is still read, see "Backends" below
     # Whether the tool is shown lives in [tools] calendar
 
 @dataclass
@@ -251,7 +252,7 @@ class Config:
 class ToolsConfig:
     taskpaper: bool = False   # show the TaskPaper tool (needs taskpapertui)
     reminders: bool = False   # show the Reminders tool (needs remtui)
-    calendar: bool = False    # show the Calendar tool (needs icalPal)
+    calendar: bool = False    # show the Calendar tool (needs calctl or icalPal)
     projects: bool = False    # show the Projects tool (needs projection)
 
 @dataclass
@@ -361,23 +362,46 @@ Press `s` to search files by filename or tag. The search performs partial matchi
 
 ## Calendar Integration
 
-Librarian integrates with macOS Calendar via icalPal to show today's meetings.
+Librarian shows today's meetings by shelling out to a backend that prints them as JSON.
 
-### Prerequisites
-- icalPal: `brew tap ajrosen/tap && brew install icalPal`
+### Backends
+Two are supported, and they are interchangeable because they answer the same invocation —
+`<backend> eventsToday -o json`:
+
+| Backend | Install | Notes |
+|---|---|---|
+| [calctl](https://github.com/7robots/calctl) | `git clone …/calctl && cd calctl && ./install.sh` | **Preferred.** Ours, pure Python, no Ruby |
+| [icalPal](https://github.com/ajrosen/icalPal) | `brew tap ajrosen/tap && brew install icalPal` | The original. Kept as a fallback |
+
+`BACKENDS` in `calendar.py` is the auto-detect order, so with `command` empty the first one found on
+PATH wins — which means installing calctl switches Librarian over with no config change.
+
+calctl exists because icalPal's *toolchain* broke here once: Homebrew stopped trusting the tap the
+formula came from, therefore could not see that icalpal needed Ruby, therefore autoremoved the Ruby
+its shebang pointed at. None of that was visible from Librarian. It is also measurably more accurate —
+see `docs/icalpal-python-port.md` for the four icalPal bugs found while verifying the port, one of
+which (`sctime` lagging a day on multi-day all-day events) was visible in Librarian's own panel.
 
 ### Configuration
 ```toml
 [tools]
-calendar = true        # the tool is opt-in; icalPal is not bundled
+calendar = true        # the tool is opt-in; no backend is bundled
 
 [calendar]
 calendar_name = ""     # empty = all calendars
-icalpal_path = ""      # empty = auto-detect
+command = ""           # empty = auto-detect: calctl, then icalPal
 ```
 
+`command` replaced `icalpal_path`, which named one specific third-party tool. The old key is still
+read, and the fallback fires on an **empty** `command`, not just a missing one — because migration
+appends `command = ""` to a file that may already carry a real `icalpal_path`, and `save()` only
+writes `command`. Without adopting the old value on load, the next save would silently drop it.
+
+A bare name (`calctl`) is looked up on PATH; anything path-shaped (`~/bin/calctl`, `/usr/local/bin/calctl`)
+is used as given. Same rule as the `reminders` and `projects` settings, so all three behave alike.
+
 ### Architecture
-- `calendar.py`: Wraps icalPal subprocess, parses JSON output, 5-minute TTL cache
+- `calendar.py`: resolves the backend, runs it, parses JSON output, 5-minute TTL cache
 - `calendar_store.py`: Sidecar JSON at `{data_directory}/calendar_associations.json` for event-to-file mapping
 - `widgets/calendar_list.py`: `CalendarList` widget with `MeetingItem` list items
 - `widgets/calendar_modal.py`: `CalendarModal` — the meeting list plus a dedicated `Preview`, over
@@ -389,10 +413,17 @@ icalpal_path = ""      # empty = auto-detect
 
 ### Failures vs empty days
 `fetch_todays_events()` raises `CalendarError` rather than returning `[]` when anything goes wrong,
-so a broken icalPal is never displayed as a day with no meetings. The message carries the specific
+so a broken backend is never displayed as a day with no meetings. The message carries the specific
 cause: exit code with the first line of stderr, a timeout, an OSError's `strerror`, or unreadable
-output. A configured `icalpal_path` that is missing or not executable is reported instead of quietly
-falling back to whatever is on PATH, so a typo says so.
+output, and it names the backend that failed rather than a hardcoded tool. A configured `command`
+that is missing or not executable is reported instead of quietly falling back to whatever is on PATH,
+so a typo says so.
+
+One case gets its own message. If the executable is present but `exec` returns `ENOENT`, the missing
+thing is something the *binary* needs — classically a shebang naming an interpreter that has been
+removed. Reporting the raw errno there reads as "not installed", which is exactly what sent the
+original diagnosis down the wrong path, so it says "installed but could not start … its interpreter
+is probably missing" instead.
 
 The worker runs with `exit_on_error=False`. Without it, Textual's default takes the **whole app
 down** when the worker raises, before the error branch can display anything. The `_export_file`
@@ -401,22 +432,26 @@ worker needs the same for the same reason.
 There is no `--version` pre-flight: `icalPal --version` writes to stderr and exits 1, so it cannot
 tell a working install from a broken one. The fetch itself is the check.
 
-### Reading icalPal output
+### Reading backend output
 Two field choices in `_parse_event()` are load-bearing and easy to "fix" back into bugs:
 
 - **Use `sctime`/`ectime`, not `start_date`/`end_date`.** For a recurring event, `start_date` holds
   the *series* original start, not today's occurrence — which sorts the meeting away from its real
   slot in the list. `sctime` carries the occurrence and a UTC offset
   (`"2026-08-11 10:00:00 -0400"`).
-- **Integer timestamps use Apple's epoch, not Unix.** icalPal counts from 2001-01-01, so
+- **Integer timestamps use Apple's epoch, not Unix.** Both backends count from 2001-01-01, so
   `datetime.fromtimestamp()` lands 31 years in the past. `APPLE_EPOCH_OFFSET` corrects it. The
   time-of-day still looks right, which is what makes this one easy to miss.
 
 Everything `_parse_datetime()` returns is timezone-aware, because `sctime` is aware and the integer
 fallback is not — sorting a mix of aware and naive datetimes raises `TypeError`.
 
-`recurring` comes from `has_recurrences`; icalPal has no `recurring` key. Null is treated as absent
-rather than false, since icalPal writes explicit nulls for fields that don't apply.
+`recurring` comes from `has_recurrences`; neither backend has a `recurring` key. Null is treated as
+absent rather than false, since icalPal writes explicit nulls for fields that don't apply.
+
+One field differs between backends and is worth knowing: for an event with no attendees icalPal emits
+`["None"]` — a Ruby nil serialized into the array, which becomes an attendee literally named "None" —
+where calctl emits `[]`.
 
 ### User Experience
 1. Select "Calendar" in Tools → a modal opens over the right-hand panels with today's meetings
@@ -555,7 +590,7 @@ Every tool that depends on a program Librarian does not bundle is opt-in:
 [tools]
 taskpaper = false   # file-based tasks, via taskpapertui
 reminders = false   # Apple Reminders, via remtui
-calendar = false    # today's meetings, via icalPal
+calendar = false    # today's meetings, via calctl (or icalPal)
 projects = false    # Smartsheet projects, via projection
 ```
 
@@ -564,7 +599,7 @@ whose backing program is missing. Which task tool to use — if any — is the u
 
 The calendar switch used to be `[calendar] enabled`. That key is still honored when `[tools] calendar`
 is absent, so older configs keep working; `[tools]` wins when both are present. `[calendar]` keeps its
-real settings (`calendar_name`, `icalpal_path`).
+real settings (`calendar_name`, `command`).
 
 `ToolsConfig.is_enabled(name)` answers by attribute lookup, so a tool with no field is treated as
 non-optional and always shown; `LibrarianApp.visible_tools()` filters `ALL_TOOLS` through it, and

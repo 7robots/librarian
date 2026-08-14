@@ -204,3 +204,83 @@ class TestThroughLoad:
 
         config = Config.load()  # must not raise
         assert config.tools.projects is False
+
+
+class TestCalendarCommandMigration:
+    """`[calendar] command` replaced `icalpal_path`, a key named after one tool.
+
+    The old key is still read. That matters more than it looks: migration adds
+    `command = ""` to a file that may already carry a real `icalpal_path`, and
+    `save()` only writes `command` -- so if the fallback did not adopt the old
+    value, the next save would silently drop it.
+    """
+
+    @pytest.fixture
+    def config_dir(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+        return tmp_path / "librarian"
+
+    def test_an_old_icalpal_path_is_adopted(self, config_dir):
+        config_dir.mkdir(parents=True)
+        path = config_dir / "config.toml"
+        path.write_text(
+            'scan_directory = "~/vault"\n'
+            "\n"
+            "[calendar]\n"
+            'icalpal_path = "/opt/homebrew/bin/icalPal"\n'
+        )
+
+        assert Config.load().calendar.command == "/opt/homebrew/bin/icalPal"
+
+    def test_the_adopted_value_survives_a_save(self, config_dir):
+        config_dir.mkdir(parents=True)
+        path = config_dir / "config.toml"
+        path.write_text(
+            'scan_directory = "~/vault"\n'
+            "\n"
+            "[calendar]\n"
+            'icalpal_path = "/opt/homebrew/bin/icalPal"\n'
+        )
+
+        config = Config.load()
+        config.save()
+        reloaded = tomllib.loads(path.read_text())
+
+        assert reloaded["calendar"]["command"] == "/opt/homebrew/bin/icalPal"
+
+    def test_the_new_key_wins_when_both_are_present(self, config_dir):
+        config_dir.mkdir(parents=True)
+        path = config_dir / "config.toml"
+        path.write_text(
+            'scan_directory = "~/vault"\n'
+            "\n"
+            "[calendar]\n"
+            'icalpal_path = "/opt/homebrew/bin/icalPal"\n'
+            'command = "calctl"\n'
+        )
+
+        assert Config.load().calendar.command == "calctl"
+
+    def test_an_empty_new_key_does_not_shadow_the_old_one(self, config_dir):
+        """Migration writes `command = ""`, which must not blank a real setting."""
+        config_dir.mkdir(parents=True)
+        path = config_dir / "config.toml"
+        path.write_text(
+            'scan_directory = "~/vault"\n'
+            "\n"
+            "[calendar]\n"
+            'icalpal_path = "/opt/homebrew/bin/icalPal"\n'
+            'command = ""\n'
+        )
+
+        assert Config.load().calendar.command == "/opt/homebrew/bin/icalPal"
+
+    def test_a_config_with_neither_key_gets_the_new_one(self, config_dir):
+        config_dir.mkdir(parents=True)
+        path = config_dir / "config.toml"
+        path.write_text('scan_directory = "~/vault"\n')
+
+        config = Config.load()
+        assert "command" in tomllib.loads(path.read_text())["calendar"]
+        # Empty means auto-detect, which prefers calctl.
+        assert config.calendar.command == ""

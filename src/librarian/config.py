@@ -34,7 +34,7 @@ _CONFIG_KEYS: tuple[tuple[str | None, str, str, str], ...] = (
     ("tools", "calendar", "false", "today's meetings, via icalPal"),
     ("tools", "projects", "false", "Smartsheet projects, via projection"),
     ("calendar", "calendar_name", '""', "empty = all calendars"),
-    ("calendar", "icalpal_path", '""', "empty = auto-detect"),
+    ("calendar", "command", '""', "empty = auto-detect: calctl, then icalPal"),
     ("icons", "style", '"auto"', "auto | nerd | emoji"),
     ("obsidian", "enabled", "true", "read folder icons from Notebook Navigator"),
 )
@@ -227,7 +227,10 @@ class CalendarConfig:
     """Calendar integration settings. Whether the tool shows is `[tools] calendar`."""
 
     calendar_name: str = ""  # empty = all calendars
-    icalpal_path: str = ""   # empty = auto-detect
+    # Backend command name or path. Empty means auto-detect, which prefers
+    # calctl over icalPal. This used to be `icalpal_path`, a key named after one
+    # specific third-party tool; that name is still read (see `load`).
+    command: str = ""
 
 
 @dataclass
@@ -315,11 +318,16 @@ class Config:
         data_dir = data.get("data_directory", str(get_default_data_dir()))
         data_directory = Path(data_dir).expanduser()
 
-        # Parse calendar config
+        # Parse calendar config. `command` replaced `icalpal_path`, which is
+        # still read so older configs keep working. The fallback triggers on an
+        # *empty* command, not just a missing one, because migration adds
+        # `command = ""` to a file that may already carry a real icalpal_path --
+        # and `save()` only writes `command`, so adopting the old value here is
+        # what keeps it from being dropped on the next write.
         cal_data = data.get("calendar", {})
         calendar = CalendarConfig(
             calendar_name=cal_data.get("calendar_name", ""),
-            icalpal_path=cal_data.get("icalpal_path", ""),
+            command=cal_data.get("command") or cal_data.get("icalpal_path", ""),
         )
 
         # Parse tools menu config. The calendar switch used to live at
@@ -462,7 +470,8 @@ class Config:
             '# Calendar settings (the tool itself is enabled under [tools])',
             '[calendar]',
             f'calendar_name = "{self.calendar.calendar_name}"  # empty = all calendars',
-            f'icalpal_path = "{self.calendar.icalpal_path}"  # empty = auto-detect',
+            f'command = "{self.calendar.command}"  '
+            '# empty = auto-detect: calctl, then icalPal',
         ])
 
         config_path.write_text("\n".join(lines) + "\n")

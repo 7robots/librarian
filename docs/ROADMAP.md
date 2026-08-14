@@ -48,9 +48,9 @@ what happens to the *host's* keys while a panel is open — a `ModalScreen` curr
 them, which is why `a`/`n`/`e` are re-declared on the calendar modal by hand.
 
 ### Replace icalPal with a Python CLI
-**Built 2026-08-14 as [calctl](https://github.com/7robots/calctl) (`~/GitHub/calctl`). Full write-up
-in [icalpal-python-port.md](icalpal-python-port.md).** What remains is the Librarian-side swap; see
-*Switch the Calendar tool over to calctl* below. The analysis that led here is kept for the record.
+**Built 2026-08-14 as [calctl](https://github.com/7robots/calctl) (`~/GitHub/calctl`), and Librarian
+switched over the same day — see *Switch the Calendar tool over to calctl* below. Full write-up in
+[icalpal-python-port.md](icalpal-python-port.md).** The analysis that led here is kept for the record.
 
 Prompted by the Calendar tool breaking that day. icalPal's logic was fine; Homebrew had autoremoved
 the *Ruby interpreter* its shebang points at, because an untrusted tap made the icalpal formula
@@ -96,28 +96,33 @@ The eyes-open cost turned out smaller than expected. Birthday calendars work, be
 `_float` timestamps are handled by the same conversion all-day events need; the `age`
 pseudo-property is not ported, and Librarian never displayed it. Reminders remain remctl's job.
 
-One wart on our side, still worth fixing whichever backend is in use:
-`calendar.resolve_icalpal()` checks only that the binary exists and is executable, so a dangling
-shebang surfaces as `Could not run icalPal: No such file or directory` — which reads as "not
-installed" when the truth is "its interpreter is missing".
+The wart on our side is fixed too: the old `resolve_icalpal()` checked only that the binary existed
+and was executable, so a dangling shebang surfaced as `Could not run icalPal: No such file or
+directory` — which reads as "not installed" when the truth was "its interpreter is missing". An
+`ENOENT` from `exec` on a file that *is* present now says so.
 
-### Switch the Calendar tool over to calctl
-**Open, 2026-08-14.** calctl is a verified drop-in: setting `[calendar] icalpal_path = "calctl"`
-today produces identical events with identical UUIDs, so meeting-note associations survive and no
-Librarian code has to change. Confirmed end-to-end through `CalendarModal`.
+### ~~Switch the Calendar tool over to calctl~~ — done 2026-08-14
+`calendar.py` now resolves a *backend* rather than one named tool. `BACKENDS = ("calctl", "icalPal")`
+is the auto-detect order, so with `[calendar] command` empty the first found on PATH wins — meaning
+installing calctl switches Librarian over with no config change, and icalPal keeps working for anyone
+who has only that.
 
-What is left is naming and defaults, which is a real decision rather than a mechanical edit:
+Three decisions, since the entry above asked for them:
 
-- `[calendar] icalpal_path` names a specific third-party tool. A backend-agnostic key
-  (`[calendar] command`) would read better, and the migration has a precedent to copy — `[calendar]
-  enabled` is still honored when `[tools] calendar` is absent.
-- `calendar.py`'s `INSTALL_HINT` points at `brew tap ajrosen/tap`, and its error messages all say
-  "icalPal".
-- Whether calctl becomes the default (found on PATH, as remtui and projection are resolved) or stays
-  opt-in behind an explicit path.
+- **`[calendar] command` replaces `icalpal_path`**, which named one specific third-party tool. The old
+  key is still read, following the `[calendar] enabled` → `[tools] calendar` precedent. The fallback
+  fires on an *empty* `command`, not just a missing one: migration appends `command = ""` to a file
+  that may already carry a real `icalpal_path`, and `save()` only writes `command`, so adopting the
+  old value on load is what stops the next save from dropping it silently.
+- **Auto-detect, not an explicit path.** calctl is preferred when present, which makes the switch a
+  matter of installing it. A bare name resolves on PATH and a path is used as given — the same rule
+  `reminders` and `projects` already follow, so all three behave alike.
+- **Error messages name the backend that failed** instead of a hardcoded "icalPal", and
+  `INSTALL_HINT` points at calctl.
 
-Worth deciding together rather than assuming: the current setup already works, so there is no
-pressure to rush it.
+Verified on the real config: `command` empty, auto-detect resolves `~/bin/calctl`, 11 events through
+`CalendarModal`. One visible improvement beyond the swap — icalPal emits `["None"]` for an event with
+no attendees, which Librarian rendered as an attendee named "None"; calctl emits `[]`.
 
 ### ~~De-duplicate the taskpaper → markdown conversion~~ — dropped 2026-08-13
 `librarian/taskpaper.py` and `taskpapertui/widgets/preview.py` hold the same conversion, differing

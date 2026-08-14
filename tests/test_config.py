@@ -41,7 +41,7 @@ class TestConfigDefaults:
     def test_default_calendar_config(self):
         config = Config()
         assert config.calendar.calendar_name == ""
-        assert config.calendar.icalpal_path == ""
+        assert config.calendar.command == ""
 
 
 class TestConfigSaveLoad:
@@ -134,7 +134,7 @@ class TestCalendarConfig:
     def test_default(self):
         cc = CalendarConfig()
         assert cc.calendar_name == ""
-        assert cc.icalpal_path == ""
+        assert cc.command == ""
 
 
 class TestAppearanceConfig:
