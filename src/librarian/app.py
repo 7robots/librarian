@@ -109,6 +109,18 @@ class LibrarianApp(
         Binding("x", "export", "Export"),
         Binding("?", "help", "Help"),
         Binding("escape", "go_back", "Back", show=False),
+        # Vim keys, live only when [keys] vim is on -- `check_action` disables
+        # every one of them otherwise, so with the switch off `ctrl+w` still
+        # means delete-word-left in an Input and `h` is just a letter.
+        Binding("ctrl+w", "vim_prefix", "Vim panel prefix", show=False),
+        # These must outrank the focused widget: with the prefix pending, `j`
+        # moves between panels, and the list underneath must not also move its
+        # cursor. `check_action` keeps them inert until then, which is what lets
+        # the same keys mean cursor movement the rest of the time.
+        Binding("h", "vim_focus('left')", "Panel left", show=False, priority=True),
+        Binding("j", "vim_focus('down')", "Panel down", show=False, priority=True),
+        Binding("k", "vim_focus('up')", "Panel up", show=False, priority=True),
+        Binding("l", "vim_focus('right')", "Panel right", show=False, priority=True),
     ]
 
     # Focus order: down the left column, then down the right.
@@ -120,6 +132,14 @@ class LibrarianApp(
         "preview",
     ]
 
+    # The same five panels as FOCUS_ORDER, arranged the way they sit on screen:
+    # the sidebar's three stacked panels, then the two on the right. Tab walks
+    # the flat order; ctrl+w needs to know which are neighbours.
+    PANEL_GRID = (
+        ("directory-tree", "all-tags-list-view", "tools-list-view"),
+        ("file-list-view", "preview"),
+    )
+
     def __init__(self, config: Config) -> None:
         super().__init__()
         self.config = config
@@ -129,6 +149,12 @@ class LibrarianApp(
         # Set once a capped preview is on screen, to fill in the rest if the
         # cursor stays put. Cancelled by the next highlight.
         self._preview_full_timer: Timer | None = None
+        # Vim panel movement: whether ctrl+w is awaiting its direction, the
+        # timer that expires it, and the panel last focused in each column --
+        # h/l return to where you were, since the columns' rows do not line up.
+        self._vim_pending = False
+        self._vim_prefix_timer: Timer | None = None
+        self._vim_column = ["directory-tree", "file-list-view"]
 
     def visible_tools(self) -> tuple[str, ...]:
         """Tools to show in the menu, dropping those disabled in config."""

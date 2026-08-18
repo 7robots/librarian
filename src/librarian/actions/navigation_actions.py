@@ -58,6 +58,123 @@ class NavigationActionsMixin:
         """Focus the previous panel."""
         self._focus_step(-1)
 
+    # --- vim panel movement -------------------------------------------------
+    #
+    # `ctrl+w` arms a prefix; the next h/j/k/l moves focus. Textual has no chord
+    # bindings, so the prefix is state plus `check_action()`: the direction keys
+    # are declared `priority=True` and reported *disabled* until the prefix is
+    # pending, which leaves them falling through to the focused widget the rest
+    # of the time. `refresh_bindings()` after every change to the flag is what
+    # makes Textual re-ask.
+
+    #: How long a lone `ctrl+w` waits for its direction, as vim's timeoutlen does.
+    VIM_PREFIX_TIMEOUT = 2.0
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        """Disable the vim bindings unless the config switch and prefix allow."""
+        if action == "vim_prefix":
+            return self.config.keys.vim
+        if action == "vim_focus":
+            return self.config.keys.vim and self._vim_pending
+        return super().check_action(action, parameters)
+
+    def action_vim_prefix(self) -> None:
+        """Arm `ctrl+w`, so the next h/j/k/l moves between panels."""
+        self._vim_pending = True
+        self.refresh_bindings()
+        if self._vim_prefix_timer is not None:
+            self._vim_prefix_timer.stop()
+        self._vim_prefix_timer = self.set_timer(
+            self.VIM_PREFIX_TIMEOUT, self._clear_vim_prefix
+        )
+
+    def _clear_vim_prefix(self) -> None:
+        """Disarm the prefix, giving h/j/k/l back to the focused widget."""
+        if self._vim_prefix_timer is not None:
+            self._vim_prefix_timer.stop()
+            self._vim_prefix_timer = None
+        if self._vim_pending:
+            self._vim_pending = False
+            self.refresh_bindings()
+
+    def action_vim_focus(self, direction: str) -> None:
+        """Move focus one panel in `direction` (left/right/up/down)."""
+        self._clear_vim_prefix()
+
+        position = self._vim_position()
+        if position is not None:
+            column, row = position
+            # Record where we are leaving from before moving, so h/l can come
+            # back here -- including when the panel was reached with Tab.
+            self._vim_column[column] = self.PANEL_GRID[column][row]
+
+        target = self._vim_target(direction, position)
+        if target is None:
+            return
+
+        widget = self._get_focus_widget(target)
+        if widget is None:
+            return
+        widget.focus()
+        for index, panels in enumerate(self.PANEL_GRID):
+            if target in panels:
+                self._vim_column[index] = target
+
+    def _vim_position(self) -> tuple[int, int] | None:
+        """(column, row) of the focused panel, or None if focus is elsewhere."""
+        index = self._get_current_focus_index()
+        if index == -1:
+            return None
+        widget_id = self.FOCUS_ORDER[index]
+        for column, panels in enumerate(self.PANEL_GRID):
+            if widget_id in panels:
+                return column, panels.index(widget_id)
+        return None
+
+    def _vim_target(
+        self, direction: str, position: tuple[int, int] | None
+    ) -> str | None:
+        """The panel id `direction` leads to, or None to stay put."""
+        wanted = {"left": 0, "right": 1}.get(direction)
+
+        if position is None:
+            # Focus is somewhere unrecognised (or nowhere). Land in the column
+            # the key points at rather than doing nothing.
+            return self._vim_remembered(wanted if wanted is not None else 0)
+
+        column, row = position
+        if wanted is None:
+            return self._vim_vertical(column, row, -1 if direction == "up" else 1)
+        if wanted == column:
+            return None  # already the leftmost/rightmost column, as in vim
+        return self._vim_remembered(wanted)
+
+    def _vim_vertical(self, column: int, row: int, step: int) -> str | None:
+        """The next focusable panel up or down this column.
+
+        No wraparound -- `ctrl+w j` at the bottom of a column stays there, which
+        is what vim does. Tab still wraps; the two are different gestures.
+        """
+        panels = self.PANEL_GRID[column]
+        row += step
+        while 0 <= row < len(panels):
+            if self._get_focus_widget(panels[row]) is not None:
+                return panels[row]
+            row += step  # e.g. an empty Tools panel, which is not a stop
+        return None
+
+    def _vim_remembered(self, column: int) -> str | None:
+        """The panel last focused in `column`, or its first focusable one."""
+        remembered = self._vim_column[column]
+        if self._get_focus_widget(remembered) is not None:
+            return remembered
+        # The remembered panel can vanish -- Tools empties when its last tool is
+        # disabled -- so fall back rather than refusing to move.
+        for widget_id in self.PANEL_GRID[column]:
+            if self._get_focus_widget(widget_id) is not None:
+                return widget_id
+        return None
+
     def _focus_step(self, direction: int) -> None:
         """Move focus by one stop, skipping panels that have nothing to focus."""
         index = self._get_current_focus_index()
