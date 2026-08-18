@@ -255,6 +255,22 @@ class TestAppearanceConfig:
         self._write_config(tmp_path, monkeypatch, "[calendar]\nenabled = false\n")
         assert Config.load().tools.calendar is False
 
+    def test_vim_keys_are_off_by_default(self, tmp_path, monkeypatch):
+        """Off unless asked for: the switch changes what a dozen keys mean."""
+        self._write_config(tmp_path, monkeypatch, 'editor = "code"\n')
+        assert Config.load().keys.vim is False
+
+    def test_vim_keys_can_be_enabled(self, tmp_path, monkeypatch):
+        self._write_config(tmp_path, monkeypatch, "[keys]\nvim = true\n")
+        assert Config.load().keys.vim is True
+
+    def test_vim_keys_round_trip(self, tmp_path, monkeypatch):
+        self._write_config(tmp_path, monkeypatch, "[keys]\nvim = true\n")
+        config = Config.load()
+        config.save()
+
+        assert Config.load().keys.vim is True
+
     def test_obsidian_can_be_disabled(self, tmp_path, monkeypatch):
         self._write_config(tmp_path, monkeypatch, "[obsidian]\nenabled = false\n")
         assert Config.load().obsidian.enabled is False

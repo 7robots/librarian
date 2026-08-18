@@ -58,8 +58,16 @@ class TestKeyPlacement:
 
         assert data["tools"]["projects"] is False
         assert data["icons"]["style"] == "auto"
+        assert data["keys"]["vim"] is False
         assert data["obsidian"]["enabled"] is True
         assert data["calendar"]["calendar_name"] == ""
+
+    def test_a_new_table_of_one_key_is_created(self):
+        """[keys] is the newest table; an old config has no header to append to."""
+        text = 'scan_directory = "/notes"\n\n[tools]\nreminders = true\n'
+        out = _add_missing_keys(text, parse(text))
+
+        assert parse(out)["keys"]["vim"] is False
 
     def test_key_is_added_to_an_existing_table(self):
         text = "[tools]\nreminders = true\n"

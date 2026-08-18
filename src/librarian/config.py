@@ -36,6 +36,12 @@ _CONFIG_KEYS: tuple[tuple[str | None, str, str, str], ...] = (
     ("calendar", "calendar_name", '""', "empty = all calendars"),
     ("calendar", "command", '""', "empty = auto-detect: calctl, then icalPal"),
     ("icons", "style", '"auto"', "auto | nerd | emoji"),
+    (
+        "keys",
+        "vim",
+        "false",
+        "vim keys: j/k/g/G in a panel, ctrl+w h/j/k/l between panels",
+    ),
     ("obsidian", "enabled", "true", "read folder icons from Notebook Navigator"),
 )
 
@@ -223,6 +229,20 @@ class ObsidianConfig:
 
 
 @dataclass
+class KeysConfig:
+    """Optional vim-style keys, off by default.
+
+    Two layers that must not be merged: `j`/`k`/`g`/`G` move the cursor *inside*
+    the focused panel, and `ctrl+w` followed by `h`/`j`/`k`/`l` moves *between*
+    panels. Binding bare `hjkl` to panel movement instead would spend the keys a
+    vim user reaches for first -- nothing in Textual binds them, so a list cursor
+    has no vim keys at all until this switch is on.
+    """
+
+    vim: bool = False
+
+
+@dataclass
 class CalendarConfig:
     """Calendar integration settings. Whether the tool shows is `[tools] calendar`."""
 
@@ -250,6 +270,7 @@ class Config:
     icons: IconConfig = field(default_factory=IconConfig)
     folders: FoldersConfig = field(default_factory=FoldersConfig)
     obsidian: ObsidianConfig = field(default_factory=ObsidianConfig)
+    keys: KeysConfig = field(default_factory=KeysConfig)
 
     def get_index_path(self) -> Path:
         """Get the JSON index file path based on configured data directory."""
@@ -360,6 +381,10 @@ class Config:
             enabled=bool(obsidian_data.get("enabled", True)),
         )
 
+        # Parse optional key schemes
+        keys_data = data.get("keys", {})
+        keys = KeysConfig(vim=bool(keys_data.get("vim", False)))
+
         config = cls(
             scan_directory=scan_directory,
             editor=editor,
@@ -374,6 +399,7 @@ class Config:
             icons=icons,
             folders=folders,
             obsidian=obsidian,
+            keys=keys,
         )
 
         # Ensure data directory exists
@@ -466,6 +492,11 @@ class Config:
             '# plugin when the scan directory is inside a vault',
             '[obsidian]',
             f'enabled = {str(self.obsidian.enabled).lower()}',
+            '',
+            '# Vim-style keys: j/k/g/G move within a panel, ctrl+w then',
+            '# h/j/k/l moves between panels. Off leaves every key as it was.',
+            '[keys]',
+            f'vim = {str(self.keys.vim).lower()}',
             '',
             '# Calendar settings (the tool itself is enabled under [tools])',
             '[calendar]',
