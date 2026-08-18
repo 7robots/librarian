@@ -24,7 +24,11 @@ from librarian.widgets import FileList, TagList
 def vault(tmp_path):
     root = tmp_path / "vault"
     (root / "techne").mkdir(parents=True)
+    # Three files at the root, so a list cursor has somewhere to go: with one
+    # item, `j` and `G` pass whether or not they do anything.
     (root / "root-note.md").write_text("# root\n")
+    (root / "second.md").write_text("# second\n")
+    (root / "third.md").write_text("# third\n")
     (root / "techne" / "Alpha.md").write_text("# alpha #tagged\n")
     return root
 
@@ -297,6 +301,153 @@ class TestTheSwitch:
             await pilot.pause()
 
             assert app.focused is panels(app)["folders"]
+
+
+class TestInsideAPanel:
+    async def test_j_and_k_move_the_folder_tree_cursor(self, app):
+        async with app.run_test(size=(100, 40)) as pilot:
+            await pilot.pause()
+            tree = panels(app)["folders"]
+            tree.root.expand()
+            await pilot.pause()
+
+            await pilot.press("j")
+            await pilot.pause()
+            assert tree.cursor_line == 1
+
+            await pilot.press("k")
+            await pilot.pause()
+            assert tree.cursor_line == 0
+
+    async def test_j_moves_a_list_cursor(self, app):
+        async with app.run_test(size=(100, 40)) as pilot:
+            await pilot.pause()
+            files = panels(app)["files"]
+            files.focus()
+            await pilot.pause()
+            assert len(files.children) >= 2, "fixture must list several files"
+
+            start = files.index
+            await pilot.press("j")
+            await pilot.pause()
+
+            assert files.index == start + 1
+
+    async def test_G_and_g_jump_to_the_ends_of_a_list(self, app):
+        async with app.run_test(size=(100, 40)) as pilot:
+            await pilot.pause()
+            files = panels(app)["files"]
+            files.focus()
+            await pilot.pause()
+            last = len(files.children) - 1
+            assert last > 0, "fixture must list several files"
+
+            await pilot.press("G")
+            await pilot.pause()
+            assert files.index == last
+
+            await pilot.press("g")
+            await pilot.pause()
+            assert files.index == 0
+
+    async def test_j_scrolls_the_preview(self, app, vault):
+        long_note = vault / "long.md"
+        long_note.write_text("# long\n\n" + "\n\n".join(f"para {i}" for i in range(200)))
+
+        async with app.run_test(size=(100, 40)) as pilot:
+            await pilot.pause()
+            preview = app.query_one("#preview")
+            await preview.show_file(long_note)
+            await pilot.pause()
+            scroll = panels(app)["preview"]
+            scroll.focus()
+            await pilot.pause()
+
+            await pilot.press("j")
+            await pilot.pause()
+            assert scroll.scroll_offset.y > 0
+
+            await pilot.press("G")
+            await pilot.pause()
+            assert scroll.scroll_offset.y == scroll.max_scroll_y
+
+    async def test_l_expands_a_folder_and_h_collapses_it(self, app):
+        async with app.run_test(size=(100, 40)) as pilot:
+            await pilot.pause()
+            tree = panels(app)["folders"]
+            tree.root.expand()
+            await pilot.pause()
+            tree.move_cursor(next(
+                node for node in tree.root.children if node.data.path.is_dir()
+            ))
+            await pilot.pause()
+            node = tree.cursor_node
+
+            await pilot.press("l")
+            await pilot.pause()
+            assert node.is_expanded
+
+            await pilot.press("h")
+            await pilot.pause()
+            assert not node.is_expanded
+
+    async def test_h_on_a_collapsed_folder_steps_out_to_the_parent(self, app):
+        async with app.run_test(size=(100, 40)) as pilot:
+            await pilot.pause()
+            tree = panels(app)["folders"]
+            tree.root.expand()
+            await pilot.pause()
+            child = next(
+                node for node in tree.root.children if node.data.path.is_dir()
+            )
+            tree.move_cursor(child)
+            await pilot.pause()
+
+            await pilot.press("h")
+            await pilot.pause()
+
+            assert tree.cursor_node is tree.root
+
+    async def test_typing_in_the_search_box_is_not_navigation(self, app):
+        """Input swallows printable keys, which is what keeps `s` usable."""
+        async with app.run_test(size=(100, 40)) as pilot:
+            await pilot.pause()
+            await pilot.press("s")
+            await pilot.pause()
+
+            await pilot.press("h", "j", "k", "l")
+            await pilot.pause()
+
+            search = app.query_one(FileList).search_input
+            assert search.value == "hjkl"
+            assert app.focused is search
+
+    async def test_the_cursor_keys_are_inert_when_vim_is_off(self, make_app):
+        app = make_app(keys=KeysConfig(vim=False))
+        async with app.run_test(size=(100, 40)) as pilot:
+            await pilot.pause()
+            tree = panels(app)["folders"]
+            tree.root.expand()
+            await pilot.pause()
+
+            await pilot.press("j")
+            await pilot.pause()
+
+            assert tree.cursor_line == 0
+
+    async def test_the_prefix_still_wins_over_the_cursor(self, app):
+        """Both meanings live on `j`; ctrl+w decides which one fires."""
+        async with app.run_test(size=(100, 40)) as pilot:
+            await pilot.pause()
+            tree = panels(app)["folders"]
+            tree.root.expand()
+            await pilot.pause()
+
+            await pilot.press("ctrl+w", "j")
+            await pilot.pause()
+
+            assert app.focused is panels(app)["tags"]
+            assert tree.cursor_line == 0
 
 
 class TestModals:

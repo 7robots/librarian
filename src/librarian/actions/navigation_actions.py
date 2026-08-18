@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from textual.containers import ScrollableContainer
+from textual.widgets import ListView, Tree
+
 from ..database import resolve_wiki_link
 from ..navigation import NavigationState
 from ..widgets import FileList, Preview, TagList
@@ -76,6 +79,8 @@ class NavigationActionsMixin:
             return self.config.keys.vim
         if action == "vim_focus":
             return self.config.keys.vim and self._vim_pending
+        if action in ("vim_cursor", "vim_edge", "vim_expand", "vim_collapse"):
+            return self.config.keys.vim
         return super().check_action(action, parameters)
 
     def action_vim_prefix(self) -> None:
@@ -174,6 +179,72 @@ class NavigationActionsMixin:
             if self._get_focus_widget(widget_id) is not None:
                 return widget_id
         return None
+
+    # --- vim movement inside a panel ----------------------------------------
+    #
+    # One dispatcher on `self.focused` rather than bindings on four widgets: the
+    # panels are a Tree, three ListViews and a VerticalScroll, none of which
+    # binds a vim key of its own, and keeping the keys here means the config
+    # switch turns all of them off in one place.
+
+    def action_vim_cursor(self, direction: str) -> None:
+        """Move the focused panel's cursor, or scroll the preview."""
+        widget = self.focused
+        if widget is None:
+            return
+        down = direction == "down"
+        if isinstance(widget, (Tree, ListView)):
+            widget.action_cursor_down() if down else widget.action_cursor_up()
+        elif isinstance(widget, ScrollableContainer):
+            widget.scroll_down(animate=False) if down else widget.scroll_up(
+                animate=False
+            )
+
+    def action_vim_edge(self, edge: str) -> None:
+        """`g`/`G`: jump to the top or bottom of the focused panel."""
+        widget = self.focused
+        bottom = edge == "bottom"
+        if isinstance(widget, Tree):
+            # Tree binds no home/end action, and scrolling alone would leave the
+            # cursor behind -- which is the thing being moved.
+            widget.cursor_line = widget.last_line if bottom else 0
+        elif isinstance(widget, ListView):
+            count = len(widget.children)
+            if count:
+                widget.index = count - 1 if bottom else 0
+        elif isinstance(widget, ScrollableContainer):
+            widget.scroll_end(animate=False) if bottom else widget.scroll_home(
+                animate=False
+            )
+
+    def action_vim_expand(self) -> None:
+        """`l` in the folder tree: expand, or step into an open folder."""
+        node = self._vim_tree_node()
+        if node is None:
+            return
+        if node.allow_expand and not node.is_expanded:
+            node.expand()
+        elif node.children:
+            self.query_one("#tag-list", TagList).directory_tree.move_cursor(
+                node.children[0]
+            )
+
+    def action_vim_collapse(self) -> None:
+        """`h` in the folder tree: collapse, or step out to the parent."""
+        node = self._vim_tree_node()
+        if node is None:
+            return
+        if node.is_expanded:
+            node.collapse()
+        elif node.parent is not None:
+            self.query_one("#tag-list", TagList).directory_tree.move_cursor(node.parent)
+
+    def _vim_tree_node(self):
+        """The folder tree's cursor node, or None when the tree is not focused."""
+        focused = self.focused
+        if not isinstance(focused, Tree):
+            return None
+        return focused.cursor_node
 
     def _focus_step(self, direction: int) -> None:
         """Move focus by one stop, skipping panels that have nothing to focus."""

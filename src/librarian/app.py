@@ -113,14 +113,33 @@ class LibrarianApp(
         # every one of them otherwise, so with the switch off `ctrl+w` still
         # means delete-word-left in an Input and `h` is just a letter.
         Binding("ctrl+w", "vim_prefix", "Vim panel prefix", show=False),
-        # These must outrank the focused widget: with the prefix pending, `j`
-        # moves between panels, and the list underneath must not also move its
-        # cursor. `check_action` keeps them inert until then, which is what lets
-        # the same keys mean cursor movement the rest of the time.
+        # `priority=True` puts these ahead of the focused widget, so with the
+        # prefix pending `j` moves between panels and the list underneath does
+        # not also move its cursor. `check_action` keeps them inert until then,
+        # which is what lets the same keys mean cursor movement the rest of the
+        # time.
+        #
+        # It is the *order-independent* half of that guarantee, not the only
+        # one: Textual tries every binding registered for a key in turn, so
+        # these winning also relies on nothing else claiming `j` first. Both
+        # were mutated -- dropping priority alone passes, listing the in-panel
+        # bindings first alone passes, doing both fails ten tests. Priority
+        # stays so that reordering this list cannot quietly break the prefix.
         Binding("h", "vim_focus('left')", "Panel left", show=False, priority=True),
         Binding("j", "vim_focus('down')", "Panel down", show=False, priority=True),
         Binding("k", "vim_focus('up')", "Panel up", show=False, priority=True),
         Binding("l", "vim_focus('right')", "Panel right", show=False, priority=True),
+        # The same letters again, without priority and without the prefix: these
+        # are reached only after the priority pass declines and no focused widget
+        # claims the key, which is exactly when h/j/k/l should mean "move inside
+        # this panel". Textual tries every binding registered for a key in turn,
+        # so the pair coexists on one node.
+        Binding("j", "vim_cursor('down')", "Cursor down", show=False),
+        Binding("k", "vim_cursor('up')", "Cursor up", show=False),
+        Binding("g", "vim_edge('top')", "Top", show=False),
+        Binding("G", "vim_edge('bottom')", "Bottom", show=False),
+        Binding("l", "vim_expand", "Expand", show=False),
+        Binding("h", "vim_collapse", "Collapse", show=False),
     ]
 
     # Focus order: down the left column, then down the right.
