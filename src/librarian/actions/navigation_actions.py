@@ -357,4 +357,6 @@ class NavigationActionsMixin:
         if self.config.tools.calendar:
             keys.append("a=Associate")
         keys.extend(["u=Update", "q=Quit"])
+        if self.config.keys.vim:
+            keys.append("j/k=Move, ctrl+w+hjkl=Panel")
         self.notify(", ".join(keys), timeout=5)

@@ -1,6 +1,6 @@
 # Vim navigation keys
 
-Status: **approved 2026-08-17** — phase 1 in progress
+Status: **complete 2026-08-17** — all four phases landed and verified
 Opened: 2026-08-17
 
 ## Goal
@@ -57,7 +57,7 @@ right = file-list-view, preview
 
 ## Phases
 
-### Phase 1 — the config switch
+### Phase 1 — the config switch  ✅ `a2a2c39`
 
 `[keys] vim = false`, a new `KeysConfig` dataclass on `Config`.
 
@@ -70,7 +70,7 @@ right = file-list-view, preview
 
 Verify: `uv run pytest tests/test_config.py tests/test_config_migration.py -q`
 
-### Phase 2 — panel movement (`ctrl+w` + `hjkl`)
+### Phase 2 — panel movement (`ctrl+w` + `hjkl`)  ✅ `2278c7b`
 
 - `app.py`: `PANEL_GRID` next to `FOCUS_ORDER`; four `priority=True` bindings
   plus `ctrl+w`, all `show=False`.
@@ -85,7 +85,7 @@ Verify: `uv run pytest tests/test_config.py tests/test_config_migration.py -q`
 
 Verify: `uv run pytest tests/test_vim_navigation.py -q`
 
-### Phase 3 — in-panel keys
+### Phase 3 — in-panel keys  ✅ `64366aa`
 
 One app-level action rather than bindings on four widgets: `j`/`k`/`g`/`G` and
 `h`/`l` dispatch on `self.focused` (`action_cursor_down`/`_up` on Tree and
@@ -99,7 +99,7 @@ all inert with `vim = false`.
 
 Verify: `uv run pytest tests/test_vim_navigation.py -q`
 
-### Phase 4 — docs, help text, and turn it on here
+### Phase 4 — docs, help text, and turn it on here  ✅
 
 - `action_help()` appends the vim keys only when enabled.
 - `CLAUDE.md`: a "Vim navigation" section — the two layers, why they are split,
@@ -115,3 +115,21 @@ confirm the keys move focus for real.
   guest panels.
 - `ctrl+w` variants beyond `hjkl` (`w`, `W`, `t`, `b`, splits, resizing).
 - Any change to Tab/shift+Tab.
+
+## Outcome
+
+All four phases landed. What changed against the plan:
+
+- **`priority=True` is defensive, not load-bearing.** The plan assumed it was what made the prefix
+  win. Mutation testing says otherwise: dropping it alone passes, and so does listing the in-panel
+  bindings first alone — only removing both fails (ten tests). It stays so that reordering `BINDINGS`
+  cannot quietly break the prefix, and both the code comment and CLAUDE.md say that rather than
+  overstating it.
+- **`h`/`l` on the tree do expand-or-step-in and collapse-or-step-out**, not plain expand/collapse —
+  the tree idiom, and no more code.
+- The vault fixture grew to three root files: with one, `j` and `G` on a list passed whether or not
+  they did anything.
+
+Verified: `uv run pytest -q` → 479 passed. Plus an end-to-end run against the real
+`~/.config/librarian/config.toml` and vault, driving `ctrl+w`+`hjkl` through all five panels.
+`[keys] vim = true` is set on this machine.

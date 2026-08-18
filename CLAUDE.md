@@ -184,7 +184,8 @@ Tab goes down the left column, then down the right:
 
 Custom focus order is defined in `LibrarianApp.FOCUS_ORDER`, with `action_focus_next`/
 `action_focus_previous` delegating to `_focus_step()`, which walks past any stop whose lookup
-returns `None`.
+returns `None`. `PANEL_GRID` holds the same five panels in their on-screen arrangement, for the
+optional vim keys below.
 
 Key bindings:
 - `s` - Search files and tags
@@ -199,6 +200,57 @@ Key bindings:
 - `x` - Export current file to HTML
 - `Escape` - Navigate back from wiki link or exit search
 - `?` - Show help
+
+### Vim keys (opt-in)
+
+```toml
+[keys]
+vim = true    # default false
+```
+
+Two layers, and the split is the whole design:
+
+| Keys | Meaning |
+|---|---|
+| `j` `k` `g` `G` | move the cursor *inside* the focused panel (the preview scrolls) |
+| `h` `l` | on the folder tree: expand-or-step-in, collapse-or-step-out |
+| `ctrl+w` then `h` `j` `k` `l` | move *between* panels |
+
+Binding bare `hjkl` to panel movement was rejected: nothing in Textual binds `j`/`k`, so the panels
+have no vim keys at all until this switch is on — spending them on panel switching would take the
+keys a vim user reaches for first.
+
+**The prefix is state, not a chord.** Textual has no multi-key bindings, so `ctrl+w` sets
+`_vim_pending` and `check_action()` reports the four direction bindings *disabled* until it is set;
+disabled means Textual keeps looking, so the key falls through to its in-panel meaning the rest of
+the time. Every vim action is gated on `config.keys.vim` in the same method, so the switch turns the
+whole scheme off in one place. `refresh_bindings()` after each change to the flag is what makes
+Textual re-ask. The prefix expires after `VIM_PREFIX_TIMEOUT` (2s), as vim's `timeoutlen` does.
+
+The direction bindings are `priority=True`, which is the *order-independent* half of the guarantee
+rather than the only one — Textual tries every binding registered for a key in turn, so they also win
+by being listed first. Mutation testing: dropping priority alone passes, listing the in-panel
+bindings first alone passes, doing both fails ten tests. Priority stays so that reordering
+`BINDINGS` cannot quietly break the prefix.
+
+`PANEL_GRID` is `FOCUS_ORDER` arranged as it sits on screen, because "the panel below this one" is
+not a question a flat list can answer. Two rules differ from Tab on purpose:
+
+- **No wraparound** at a column's ends, as in vim. Tab still wraps.
+- **`h`/`l` land on the panel last focused in that column.** The sidebar's rows (`1fr`/`1fr`/`auto`)
+  do not line up with the right column's (`33%`/`67%`), so there is no honest "the panel level with
+  this one"; last-focused never surprises. A remembered panel that has vanished (Tools, when its last
+  tool is disabled) falls back to the column's first focusable panel.
+
+In-panel movement is one dispatcher on `self.focused` rather than bindings on four widgets — the
+panels are a `Tree`, three `ListView`s and a `VerticalScroll`. Note `ListView` subclasses
+`VerticalScroll`, so the isinstance ladder checks lists before containers.
+
+Two things the scheme deliberately does not reach. A focused `Input` swallows printable keys
+(`Input._on_key` calls `event.stop()`), so typing `hjkl` in the search box searches for "hjkl" — and
+`Input` binds `ctrl+w` to delete-word-left, so the prefix cannot even be armed from there. And a
+`ModalScreen` blocks app bindings entirely, so the keys stop at the Calendar/Reminders/Projects
+modals, whose embedded panels carry their own.
 
 ## CSS Layout Notes
 
@@ -247,6 +299,10 @@ class ObsidianConfig:
     enabled: bool = True
 
 @dataclass
+class KeysConfig:
+    vim: bool = False       # j/k/g/G in a panel, ctrl+w + h/j/k/l between panels
+
+@dataclass
 class Config:
 @dataclass
 class ToolsConfig:
@@ -270,6 +326,7 @@ class Config:
     icons: IconConfig
     folders: FoldersConfig
     obsidian: ObsidianConfig
+    keys: KeysConfig
 ```
 
 ## Performance Features

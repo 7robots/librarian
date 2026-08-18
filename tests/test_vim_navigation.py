@@ -450,6 +450,29 @@ class TestInsideAPanel:
             assert tree.cursor_line == 0
 
 
+class TestHelp:
+    async def test_help_lists_the_vim_keys_when_they_are_on(self, app):
+        async with app.run_test(size=(100, 40)) as pilot:
+            await pilot.pause()
+            shown = []
+            app.notify = lambda message, **kwargs: shown.append(message)
+
+            app.action_help()
+
+            assert "ctrl+w" in shown[0]
+
+    async def test_help_does_not_advertise_keys_that_do_nothing(self, make_app):
+        app = make_app(keys=KeysConfig(vim=False))
+        async with app.run_test(size=(100, 40)) as pilot:
+            await pilot.pause()
+            shown = []
+            app.notify = lambda message, **kwargs: shown.append(message)
+
+            app.action_help()
+
+            assert "ctrl+w" not in shown[0]
+
+
 class TestModals:
     async def test_a_modal_screen_keeps_the_keys_to_itself(self, app):
         """The guest panels carry their own keys; ours stop at the boundary."""
