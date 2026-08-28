@@ -203,6 +203,7 @@ class LibrarianApp(
                 appearance=build_folder_appearance(self.config),
                 tools=self.visible_tools(),
                 show_folders=self.config.tools.is_enabled("folders"),
+                show_tags=self.config.tools.is_enabled("tags"),
                 show_craft=self.config.tools.is_enabled("craft"),
                 id="tag-list",
                 classes="panel",
@@ -567,9 +568,15 @@ class LibrarianApp(
     def _select_taskpaper_tag(self) -> None:
         """Select the #taskpaper tag and show its files."""
         tag_list = self.query_one("#tag-list", TagList)
+        all_list = tag_list.all_tags_list_view
+        if all_list is None:
+            self.notify(
+                "The Tags panel is off. Set tags = true under [tools] to enable it.",
+                severity="warning",
+            )
+            return
         tag_list.active_source = "tags"
 
-        all_list = tag_list.all_tags_list_view
         for i, item in enumerate(all_list.children):
             if isinstance(item, TagItem) and item.tag_name.lower() == "taskpaper":
                 all_list.index = i

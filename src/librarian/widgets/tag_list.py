@@ -316,20 +316,27 @@ class TagList(Vertical):
         appearance: FolderAppearance | None = None,
         tools: tuple[str, ...] | None = None,
         show_folders: bool = True,
+        show_tags: bool = True,
         show_craft: bool = False,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
         self.tools = tuple(tools) if tools is not None else DEFAULT_TOOLS
         self.show_folders = show_folders
+        self.show_tags = show_tags
         self.show_craft = show_craft
         self._all_tags: list[tuple[str, int]] = []
         self._scan_directory = scan_directory or Path.home()
         self._appearance = appearance
-        # Which panel drives the Files list: "folders" or "tags". Both are
-        # always visible, so the last one touched wins. With the folder browser
-        # off there is only one candidate.
-        self.active_source: str = DEFAULT_SOURCE if show_folders else "tags"
+        # Which panel drives the Files list: "folders", "tags", or "craft".
+        # The last one touched wins; at startup the first panel that exists
+        # leads, in that order.
+        if show_folders:
+            self.active_source: str = DEFAULT_SOURCE
+        elif show_tags:
+            self.active_source = "tags"
+        else:
+            self.active_source = "craft"
         self._tags_show_all: bool = False
 
     def compose(self) -> ComposeResult:
@@ -349,9 +356,10 @@ class TagList(Vertical):
             with Vertical(id="craft-panel"):
                 yield Static("CRAFT", classes="tag-header", id="craft-header")
                 yield CraftTree(id="craft-tree")
-        with Vertical(id="tags-panel"):
-            yield Static("ALL TAGS", classes="tag-header", id="all-tags-header")
-            yield ListView(id="all-tags-list-view")
+        if self.show_tags:
+            with Vertical(id="tags-panel"):
+                yield Static("ALL TAGS", classes="tag-header", id="all-tags-header")
+                yield ListView(id="all-tags-list-view")
         with Vertical(id="tools-panel"):
             yield Static("\u2605 TOOLS", classes="tag-header", id="tools-header")
             yield ListView(
@@ -364,8 +372,12 @@ class TagList(Vertical):
         return self.query_one("#tools-list-view", ListView)
 
     @property
-    def all_tags_list_view(self) -> ListView:
-        return self.query_one("#all-tags-list-view", ListView)
+    def all_tags_list_view(self) -> ListView | None:
+        """The tags list, or None when the tags panel is turned off."""
+        try:
+            return self.query_one("#all-tags-list-view", ListView)
+        except NoMatches:
+            return None
 
     @property
     def directory_tree(self) -> MarkdownDirectoryTree | None:
@@ -405,6 +417,9 @@ class TagList(Vertical):
 
     def update_tags(self, tags: list[tuple[str, int]]) -> None:
         """Update the list of tags with incremental updates."""
+        if self.all_tags_list_view is None:
+            return  # Tags panel turned off
+
         selected_tag = self.get_selected_tag()
 
         self._all_tags = tags
@@ -452,33 +467,43 @@ class TagList(Vertical):
     def _restore_selection(self, tag_name: str) -> None:
         """Restore selection to a specific tag if it exists."""
         all_list = self.all_tags_list_view
+        if all_list is None:
+            return
         for i, item in enumerate(all_list.children):
             if isinstance(item, TagItem) and item.tag_name == tag_name:
                 all_list.index = i
                 return
 
     def initialize(self) -> None:
-        """Focus the folder tree and announce its starting folder.
+        """Focus the first panel that exists and announce its starting item.
 
-        Called once at startup. Folders leads, so browsing begins there --
-        unless the folder browser is off, in which case the tags list leads and
-        the highlighted tag (if any) drives the Files panel.
+        Called once at startup. Folders leads when present, then Tags, then
+        Craft. Focusing the Craft tree triggers its first fetch (and so the
+        `op read`) -- acceptable only here, where Craft is the sole browsing
+        panel and loading it *is* the point of launching.
         """
         tree = self.directory_tree
-        if tree is None:
-            self.all_tags_list_view.focus()
+        if tree is not None:
+            if tree.cursor_line < 0:
+                tree.cursor_line = 0
+            tree.focus()
+
+            folder = self.get_selected_folder()
+            if folder is not None:
+                self.post_message(self.FolderHighlighted(folder))
+            return
+
+        tags = self.all_tags_list_view
+        if tags is not None:
+            tags.focus()
             tag = self.get_selected_tag()
             if tag is not None:
                 self.post_message(self.TagSelected(tag))
             return
 
-        if tree.cursor_line < 0:
-            tree.cursor_line = 0
-        tree.focus()
-
-        folder = self.get_selected_folder()
-        if folder is not None:
-            self.post_message(self.FolderHighlighted(folder))
+        craft = self.craft_tree
+        if craft is not None:
+            craft.focus()
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         """Handle selection from tools menu or tag list."""
@@ -556,6 +581,8 @@ class TagList(Vertical):
     def get_selected_tag(self) -> str | None:
         """Get the currently selected tag name."""
         all_list = self.all_tags_list_view
+        if all_list is None:
+            return None
         if all_list.highlighted_child is not None:
             item = all_list.highlighted_child
             if isinstance(item, TagItem):

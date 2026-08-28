@@ -664,12 +664,17 @@ projects = false    # Smartsheet projects, via projection
 All default to false, so a fresh install shows only Tags and Folders and never advertises a tool
 whose backing program is missing. Which task tool to use — if any — is the user's choice.
 
-One switch in `[tools]` is different in kind: `folders = true` controls the Folders *panel*, not a
-Tools menu entry. It needs no third-party program, so it alone defaults on. Turning it off removes
-the panel entirely — `TagList` composes without it, `directory_tree` returns `None`, `active_source`
-starts as `"tags"`, startup focuses the tags list and publishes the highlighted tag's files, and the
-Tab/vim focus machinery skips the missing tree the same way it skips an empty Tools panel. Indexing
-and the file watcher are untouched, consistent with hiding being UI-only.
+Two switches in `[tools]` are different in kind: `folders = true` and `tags = true` control sidebar
+*panels*, not Tools menu entries. They need no third-party program, so they alone default on, and
+they are independent views of the local vault (the tree reads the filesystem, tags read the index)
+— neither switch implies the other. Turning one off removes its panel entirely: `TagList` composes
+without it, its accessor (`directory_tree` / `all_tags_list_view`) returns `None`, and the Tab/vim
+focus machinery skips it the same way it skips an empty Tools panel. Startup focus and
+`active_source` go to the first panel present, in the order folders → tags → craft; focusing the
+Craft tree triggers its first fetch, so a Craft-only sidebar (`folders=false, tags=false,
+craft=true`) loads at launch by design — there, loading is the point. Indexing and the file
+watcher are untouched either way, consistent with hiding being UI-only; `t` (TaskPaper) warns
+rather than silently failing when the tags panel it needs is off.
 
 The calendar switch used to be `[calendar] enabled`. That key is still honored when `[tools] calendar`
 is absent, so older configs keep working; `[tools]` wins when both are present. `[calendar]` keeps its

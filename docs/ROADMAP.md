@@ -24,16 +24,22 @@ Two things worth keeping on this side:
   which survives `./install.sh` — that syncs `--inexact` — but a bare `uv sync` is exact and would
   replace it with the published package.
 
-### Tags panel scope with Craft enabled
-From the Craft-module acceptance gate (2026-08-28), three linked observations, **awaiting a
-ruling**: (a) turning `[tools] folders` off leaves the Tags panel browsing the same local vault;
-(b) with Craft on, a "Craft tags" browser would be natural; (c) with both on, which source the
-Tags panel serves needs deciding. Recommendation: add a `[tools] tags` switch (default on, same
-pattern as `folders`) so local-vault browsing can be hidden entirely — the panels are independent
-views, so coupling tags to folders would surprise; and treat Craft tags as its own feature, since
-the API has no list-tags endpoint — it would need `/blocks/search` over hashtags or per-doc
-scanning, with unknown cost. A source-scoped Tags panel (shows the active source's tags) beats a
-fixed priority order if Craft tags ever exist.
+### Craft tags browser
+From the Craft-module acceptance gate (2026-08-28). The `[tools] tags` switch half landed the same
+day (tags panel optional, default on; `folders=false, tags=false, craft=true` gives a Craft-only
+sidebar). What remains is the Craft tags feature itself, design agreed as **source-scoped**: the
+Tags panel shows the active source's tags rather than one source winning a fixed priority.
+
+Feasibility, verified live 2026-08-28: `GET /documents/search?regexps=<RE2>` sweeps the whole
+space. One query with librarian's tag pattern (`(^|\s)#[a-zA-Z][a-zA-Z0-9_-]+`) returned every
+tagged doc (83 matches, 73 docs — the documented top-20 cap did **not** apply), and tag names are
+extractable client-side from the matched-block markdown (snippets bold matches as `**#tag**` and
+elide with `...`; `fetchBlocks=true` returns the full blocks when fidelity matters). Per-tag doc
+listings are one precise query each (`#meetings` → 9 docs), sorted newest-modified first. Two
+costs to design around: results carry **no document title** (resolve per doc via
+`GET /blocks?id=&maxDepth=0`, cacheable — `include` is a content filter, not a field selector),
+and a space-wide regex sweep is one slow request (~1–2s), wanting the same TTL-cache treatment as
+folders.
 
 ### Create a new Craft note from Librarian
 Deferred out of the Craft module plan (`docs/plans/craft-module.md`, phases 5–7): the plan ships

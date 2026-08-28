@@ -47,19 +47,21 @@ class NavigationActionsMixin:
         preview = self.query_one("#preview", Preview)
 
         focus_map = {
-            id(tag_list.all_tags_list_view): 2,
             id(tag_list.tools_list_view): 3,
             id(file_list.list_view): 4,
             id(preview.scroll_view): 5,
         }
-        # The folder browser and Craft panels are optional, so either tree may
-        # not exist at all.
+        # The sidebar's browsing panels are all optional, so any of the three
+        # may not exist at all.
         tree = tag_list.directory_tree
         if tree is not None:
             focus_map[id(tree)] = 0
         craft = tag_list.craft_tree
         if craft is not None:
             focus_map[id(craft)] = 1
+        tags = tag_list.all_tags_list_view
+        if tags is not None:
+            focus_map[id(tags)] = 2
         return focus_map.get(id(focused), -1)
 
     def action_focus_next(self) -> None:
@@ -353,16 +355,23 @@ class NavigationActionsMixin:
         """
         self._refresh_file_panel()
 
-        # Back to whichever panel drives the Files list.
+        # Back to whichever panel drives the Files list; every sidebar panel
+        # is optional, so fall through to whichever exists.
         tag_list = self.query_one("#tag-list", TagList)
-        if tag_list.active_source == "craft" and tag_list.craft_tree is not None:
-            tag_list.craft_tree.focus()
-            return
-        tree = tag_list.directory_tree
-        if tag_list.active_source == "tags" or tree is None:
-            tag_list.all_tags_list_view.focus()
-        else:
-            tree.focus()
+        preferred = {
+            "craft": tag_list.craft_tree,
+            "folders": tag_list.directory_tree,
+            "tags": tag_list.all_tags_list_view,
+        }
+        panel = preferred.get(tag_list.active_source)
+        if panel is None:
+            panel = (
+                tag_list.directory_tree
+                or tag_list.all_tags_list_view
+                or tag_list.craft_tree
+            )
+        if panel is not None:
+            panel.focus()
 
     def action_help(self) -> None:
         """Show help information."""

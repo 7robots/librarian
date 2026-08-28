@@ -30,6 +30,7 @@ _CONFIG_KEYS: tuple[tuple[str | None, str, str, str], ...] = (
     (None, "export_directory", None, "Directory for exported files (PDF/HTML)"),
     (None, "data_directory", None, "Directory for index data (index.json)"),
     ("tools", "folders", "true", "the folder browser panel; needs nothing, on by default"),
+    ("tools", "tags", "true", "the tags panel over the local index; needs nothing, on by default"),
     ("tools", "taskpaper", "false", "file-based tasks, via taskpapertui"),
     ("tools", "reminders", "false", "Apple Reminders, via remtui"),
     ("tools", "calendar", "false", "today's meetings, via icalPal"),
@@ -197,13 +198,16 @@ class ToolsConfig:
     code stays in place, so `.taskpaper` files keep being indexed, previewed,
     exported, and edited either way.
 
-    `folders` is the exception: it is the folder browser *panel*, not a Tools
-    menu entry, and it needs no third-party program -- so it alone defaults on.
-    Turning it off removes the panel and starts browsing at the tags list;
-    indexing and the file watcher are untouched.
+    `folders` and `tags` are the exceptions: they are sidebar *panels*, not
+    Tools menu entries, and they need no third-party program -- so they alone
+    default on. Turning one off removes its panel; indexing and the file
+    watcher are untouched either way. They are independent views of the local
+    vault (the tree reads the filesystem, tags read the index), so neither
+    switch implies the other -- a Craft-only setup turns both off.
     """
 
     folders: bool = True
+    tags: bool = True
     taskpaper: bool = False
     reminders: bool = False
     calendar: bool = False
@@ -387,6 +391,7 @@ class Config:
         tools_data = data.get("tools", {})
         tools = ToolsConfig(
             folders=bool(tools_data.get("folders", True)),
+            tags=bool(tools_data.get("tags", True)),
             taskpaper=bool(tools_data.get("taskpaper", False)),
             reminders=bool(tools_data.get("reminders", False)),
             calendar=bool(
@@ -495,10 +500,11 @@ class Config:
             '# Optional tools shown in the Tools menu. Each needs a third-party',
             '# program (taskpapertui, remtui, icalPal, projection), so all are opt-in.',
             '# Hiding one only hides its UI: .taskpaper files stay indexed.',
-            '# folders is the folder browser panel; it needs nothing, so it is on',
-            '# by default. Off removes the panel and starts browsing at the tags list.',
+            '# folders and tags are sidebar panels over the local vault; they need',
+            '# nothing, so both are on by default. Off removes the panel.',
             '[tools]',
             f'folders = {str(self.tools.folders).lower()}',
+            f'tags = {str(self.tools.tags).lower()}',
             f'taskpaper = {str(self.tools.taskpaper).lower()}',
             f'reminders = {str(self.tools.reminders).lower()}',
             f'calendar = {str(self.tools.calendar).lower()}',
