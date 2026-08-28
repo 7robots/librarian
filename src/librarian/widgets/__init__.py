@@ -1,6 +1,7 @@
 """Librarian widgets."""
 
 from .banner import Banner
+from .craft_tree import CraftTree
 from .tag_list import TagList
 from .file_list import FileList
 from .preview import Preview, load_file_content
@@ -15,6 +16,7 @@ from .protocols import (
 
 __all__ = [
     "Banner",
+    "CraftTree",
     "TagList",
     "FileList",
     "Preview",

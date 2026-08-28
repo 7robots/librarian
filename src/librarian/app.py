@@ -12,6 +12,7 @@ from textual.worker import Worker
 
 from .actions import (
     CalendarActionsMixin,
+    CraftActionsMixin,
     FileActionsMixin,
     NavigationActionsMixin,
     ProjectsActionsMixin,
@@ -46,6 +47,9 @@ PREVIEW_SETTLE = 0.35
 
 
 class LibrarianApp(
+    # Craft precedes File so its `action_edit` sees Craft docs first and
+    # defers to the file-based edit via super().
+    CraftActionsMixin,
     FileActionsMixin,
     CalendarActionsMixin,
     NavigationActionsMixin,
@@ -142,20 +146,23 @@ class LibrarianApp(
         Binding("h", "vim_collapse", "Collapse", show=False),
     ]
 
-    # Focus order: down the left column, then down the right.
+    # Focus order: down the left column, then down the right. Optional panels
+    # (Folders, Craft, an empty Tools menu) are skipped when their lookup
+    # returns None.
     FOCUS_ORDER = [
         "directory-tree",
+        "craft-tree",
         "all-tags-list-view",
         "tools-list-view",
         "file-list-view",
         "preview",
     ]
 
-    # The same five panels as FOCUS_ORDER, arranged the way they sit on screen:
-    # the sidebar's three stacked panels, then the two on the right. Tab walks
+    # The same panels as FOCUS_ORDER, arranged the way they sit on screen:
+    # the sidebar's stacked panels, then the two on the right. Tab walks
     # the flat order; ctrl+w needs to know which are neighbours.
     PANEL_GRID = (
-        ("directory-tree", "all-tags-list-view", "tools-list-view"),
+        ("directory-tree", "craft-tree", "all-tags-list-view", "tools-list-view"),
         ("file-list-view", "preview"),
     )
 
@@ -174,6 +181,8 @@ class LibrarianApp(
         self._vim_pending = False
         self._vim_prefix_timer: Timer | None = None
         self._vim_column = ["directory-tree", "file-list-view"]
+        # Built by _init_craft() when [tools] craft is on; None otherwise.
+        self._craft = None
 
     def visible_tools(self) -> tuple[str, ...]:
         """Tools to show in the menu, dropping those disabled in config."""
@@ -189,6 +198,7 @@ class LibrarianApp(
                 appearance=build_folder_appearance(self.config),
                 tools=self.visible_tools(),
                 show_folders=self.config.tools.is_enabled("folders"),
+                show_craft=self.config.tools.is_enabled("craft"),
                 id="tag-list",
                 classes="panel",
             )
@@ -208,6 +218,9 @@ class LibrarianApp(
 
         self._watcher = FileWatcher(self.config, self._on_file_change)
         self._watcher.start()
+
+        if self.config.tools.is_enabled("craft"):
+            self._init_craft()
 
         self.notify("Scanning files...")
         self.run_worker(self._background_scan, exclusive=True, thread=True)
@@ -234,6 +247,17 @@ class LibrarianApp(
         if event.state.name == "ERROR":
             if worker_name == "_export_file":
                 self.notify(f"Export failed: {event.worker.error}", severity="error")
+            elif worker_name == "_fetch_craft_folders":
+                # Show why in the panel, so a broken connection is never
+                # mistaken for a space with no folders.
+                message = str(event.worker.error) or "Craft fetch failed"
+                tree = self._craft_tree()
+                if tree is not None:
+                    tree.show_message(message)
+                self.notify(message, severity="error", timeout=8)
+            elif worker_name in ("_fetch_craft_docs", "_load_craft_preview"):
+                message = str(event.worker.error) or "Craft fetch failed"
+                self.notify(message, severity="error", timeout=8)
             elif worker_name == "_fetch_calendar":
                 # Show why in the panel, so a broken icalPal is never mistaken
                 # for a day with no meetings.
@@ -270,6 +294,35 @@ class LibrarianApp(
                 calendar_list = self._calendar_list()
                 if calendar_list is not None:
                     calendar_list.update_events(result)
+
+        elif worker_name == "_fetch_craft_folders":
+            result = event.worker.result
+            if result is not None:
+                tree = self._craft_tree()
+                if tree is not None:
+                    tree.update_folders(result)
+
+        elif worker_name == "_fetch_craft_docs":
+            result = event.worker.result
+            if result is not None:
+                folder, docs = result
+                tag_list = self.query_one("#tag-list", TagList)
+                # Stale results must not overwrite a source the user has since
+                # moved on to.
+                if tag_list.active_source == "craft":
+                    file_list = self.query_one("#file-list", FileList)
+                    file_list.update_craft_docs(docs, folder.name)
+
+        elif worker_name == "_load_craft_preview":
+            result = event.worker.result
+            if result is not None:
+                doc, markdown = result
+                file_list = self.query_one("#file-list", FileList)
+                selected = file_list.get_selected_craft_doc()
+                if selected is None or selected.id != doc.id:
+                    return
+                preview = self.query_one("#preview", Preview)
+                self.call_later(preview.show_markdown, doc.title, markdown)
 
         elif worker_name == "_load_preview":
             result = event.worker.result
@@ -375,6 +428,13 @@ class LibrarianApp(
                 self.call_later(self._show_folder_files, folder)
             return
 
+        if tag_list.active_source == "craft":
+            # Remote listing: the index update that got us here cannot have
+            # changed it, but leaving search mode clears the panel, so relist
+            # (cached, so usually free).
+            self._refresh_craft_docs()
+            return
+
         selected_tag = tag_list.get_selected_tag()
         if selected_tag:
             files = get_files_by_tag(selected_tag)
@@ -398,13 +458,19 @@ class LibrarianApp(
     async def on_file_list_file_highlighted(
         self, event: FileList.FileHighlighted
     ) -> None:
-        """Handle file highlight (cursor moved) - update preview with debouncing."""
-        self._cancel_preview_timers()
+        """Handle file highlight (cursor moved) - update preview with debouncing.
 
+        Staleness is checked *before* cancelling: ListView emits highlights
+        asynchronously, so an event for a listing that has since been replaced
+        (e.g. by Craft docs) can arrive after the new listing armed its own
+        preview timer -- cancelling first would kill that timer and show
+        nothing.
+        """
         file_list = self.query_one("#file-list", FileList)
         if event.file_path not in file_list._files:
             return
 
+        self._cancel_preview_timers()
         file_path = event.file_path
 
         self._preview_timer = self.set_timer(

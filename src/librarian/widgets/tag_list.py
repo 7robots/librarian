@@ -14,6 +14,8 @@ from textual.widgets._directory_tree import DirEntry
 from textual.widgets._tree import TOGGLE_STYLE, TreeNode
 
 from ..appearance import FolderAppearance
+from ..craft import CraftFolder
+from .craft_tree import CraftTree
 
 # Maximum tags to display before showing "Show more" item
 MAX_DISPLAY_TAGS = 200
@@ -192,6 +194,19 @@ class TagList(Vertical):
         border: solid green;
     }
 
+    TagList #craft-panel {
+        height: 1fr;
+        border: solid $secondary;
+    }
+
+    TagList #craft-panel:focus-within {
+        border: solid magenta;
+    }
+
+    TagList #craft-header {
+        color: $secondary;
+    }
+
     TagList #tags-panel {
         height: 1fr;
         border: solid $primary;
@@ -288,17 +303,26 @@ class TagList(Vertical):
             super().__init__()
             self.tool_name = tool_name
 
+    class CraftFolderHighlighted(Message):
+        """Message emitted when the Craft tree cursor moves to a folder."""
+
+        def __init__(self, folder: CraftFolder) -> None:
+            super().__init__()
+            self.folder = folder
+
     def __init__(
         self,
         scan_directory: Path | None = None,
         appearance: FolderAppearance | None = None,
         tools: tuple[str, ...] | None = None,
         show_folders: bool = True,
+        show_craft: bool = False,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
         self.tools = tuple(tools) if tools is not None else DEFAULT_TOOLS
         self.show_folders = show_folders
+        self.show_craft = show_craft
         self._all_tags: list[tuple[str, int]] = []
         self._scan_directory = scan_directory or Path.home()
         self._appearance = appearance
@@ -321,6 +345,10 @@ class TagList(Vertical):
                     appearance=self._appearance,
                     id="directory-tree",
                 )
+        if self.show_craft:
+            with Vertical(id="craft-panel"):
+                yield Static("CRAFT", classes="tag-header", id="craft-header")
+                yield CraftTree(id="craft-tree")
         with Vertical(id="tags-panel"):
             yield Static("ALL TAGS", classes="tag-header", id="all-tags-header")
             yield ListView(id="all-tags-list-view")
@@ -344,6 +372,14 @@ class TagList(Vertical):
         """The folder tree, or None when the folder browser is turned off."""
         try:
             return self.query_one("#directory-tree", MarkdownDirectoryTree)
+        except NoMatches:
+            return None
+
+    @property
+    def craft_tree(self) -> CraftTree | None:
+        """The Craft folder tree, or None when the Craft module is off."""
+        try:
+            return self.query_one("#craft-tree", CraftTree)
         except NoMatches:
             return None
 
@@ -473,7 +509,17 @@ class TagList(Vertical):
             self.post_message(self.FileSelected(event.path))
 
     def on_tree_node_highlighted(self, event: Tree.NodeHighlighted) -> None:
-        """Announce the folder under the cursor so the Files panel can follow."""
+        """Announce the folder under the cursor so the Files panel can follow.
+
+        Both trees land here; which one it was is told by the node's data --
+        a filesystem path for the directory tree, a `CraftFolder` for Craft.
+        """
+        data = getattr(event.node, "data", None)
+        if isinstance(data, CraftFolder):
+            self.active_source = "craft"
+            self.post_message(self.CraftFolderHighlighted(data))
+            return
+
         folder = self._folder_for_node(event.node)
         if folder is not None:
             self.active_source = "folders"

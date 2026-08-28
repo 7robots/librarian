@@ -34,6 +34,14 @@ _CONFIG_KEYS: tuple[tuple[str | None, str, str, str], ...] = (
     ("tools", "reminders", "false", "Apple Reminders, via remtui"),
     ("tools", "calendar", "false", "today's meetings, via icalPal"),
     ("tools", "projects", "false", "Smartsheet projects, via projection"),
+    ("tools", "craft", "false", "Craft notes browser, via the Craft API"),
+    ("craft", "api_url", '""', "Craft connection API URL (connect.craft.do/links/.../api/v1)"),
+    (
+        "craft",
+        "api_key_ref",
+        '""',
+        "1Password reference to the API key, e.g. op://Employee/Craft API Key/credential",
+    ),
     ("calendar", "calendar_name", '""', "empty = all calendars"),
     ("calendar", "command", '""', "empty = auto-detect: calctl, then icalPal"),
     ("icons", "style", '"auto"', "auto | nerd | emoji"),
@@ -200,6 +208,7 @@ class ToolsConfig:
     reminders: bool = False
     calendar: bool = False
     projects: bool = False
+    craft: bool = False
 
     def is_enabled(self, tool_name: str) -> bool:
         """Whether a tool should be shown.
@@ -250,6 +259,19 @@ class KeysConfig:
 
 
 @dataclass
+class CraftConfig:
+    """Craft API connection settings. Whether the panel shows is `[tools] craft`.
+
+    The connection URL identifies the space-level API connection; the key is
+    named by a 1Password reference and resolved via `op read` at first use --
+    the value itself is never stored here.
+    """
+
+    api_url: str = ""
+    api_key_ref: str = ""
+
+
+@dataclass
 class CalendarConfig:
     """Calendar integration settings. Whether the tool shows is `[tools] calendar`."""
 
@@ -273,6 +295,7 @@ class Config:
     export_directory: Path = field(default_factory=lambda: Path.home() / "Downloads")
     data_directory: Path = field(default_factory=get_default_data_dir)
     calendar: CalendarConfig = field(default_factory=CalendarConfig)
+    craft: CraftConfig = field(default_factory=CraftConfig)
     tools: ToolsConfig = field(default_factory=ToolsConfig)
     icons: IconConfig = field(default_factory=IconConfig)
     folders: FoldersConfig = field(default_factory=FoldersConfig)
@@ -370,6 +393,14 @@ class Config:
                 tools_data.get("calendar", cal_data.get("enabled", False))
             ),
             projects=bool(tools_data.get("projects", False)),
+            craft=bool(tools_data.get("craft", False)),
+        )
+
+        # Parse Craft API connection settings
+        craft_data = data.get("craft", {})
+        craft = CraftConfig(
+            api_url=craft_data.get("api_url", ""),
+            api_key_ref=craft_data.get("api_key_ref", ""),
         )
 
         # Parse icon rendering config
@@ -403,6 +434,7 @@ class Config:
             export_directory=export_directory,
             data_directory=data_directory,
             calendar=calendar,
+            craft=craft,
             tools=tools,
             icons=icons,
             folders=folders,
@@ -471,6 +503,7 @@ class Config:
             f'reminders = {str(self.tools.reminders).lower()}',
             f'calendar = {str(self.tools.calendar).lower()}',
             f'projects = {str(self.tools.projects).lower()}',
+            f'craft = {str(self.tools.craft).lower()}',
             '',
             '# Folder icon glyphs: "auto" detects Nerd Font support, or force',
             '# "nerd" (tinted with the folder color) or "emoji" (works anywhere)',
@@ -508,6 +541,13 @@ class Config:
             '# h/j/k/l moves between panels. Off leaves every key as it was.',
             '[keys]',
             f'vim = {str(self.keys.vim).lower()}',
+            '',
+            '# Craft API connection (the panel itself is enabled under [tools]).',
+            '# The key is a 1Password reference, resolved via `op read` at first',
+            '# use -- never the key value itself.',
+            '[craft]',
+            f'api_url = "{self.craft.api_url}"',
+            f'api_key_ref = "{self.craft.api_key_ref}"',
             '',
             '# Calendar settings (the tool itself is enabled under [tools])',
             '[calendar]',

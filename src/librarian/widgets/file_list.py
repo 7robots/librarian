@@ -8,8 +8,21 @@ from textual.events import Key
 from textual.message import Message
 from textual.widgets import Input, Label, ListItem, ListView, Static
 
+from ..craft import CraftDoc
+
 # Maximum files to display before showing "Show more" item
 MAX_DISPLAY_FILES = 500
+
+
+class CraftDocItem(ListItem):
+    """A list item representing a Craft document (remote, not a Path)."""
+
+    def __init__(self, doc: CraftDoc) -> None:
+        super().__init__()
+        self.doc = doc
+
+    def compose(self) -> ComposeResult:
+        yield Label(self.doc.title)
 
 
 class FileItem(ListItem):
@@ -110,6 +123,13 @@ class FileList(Vertical):
 
         pass
 
+    class CraftDocHighlighted(Message):
+        """Message emitted when the cursor moves to a Craft document."""
+
+        def __init__(self, doc: CraftDoc) -> None:
+            super().__init__()
+            self.doc = doc
+
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self._files: list[Path] = []
@@ -117,6 +137,7 @@ class FileList(Vertical):
         self._current_tag: str | None = None
         self._current_folder: str | None = None
         self._navigation_target: str | None = None
+        self._craft_folder: str | None = None
         self._search_mode: bool = False
         self._match_info: dict[Path, str] = {}
         self._files_show_all: bool = False
@@ -149,6 +170,7 @@ class FileList(Vertical):
         self._current_tag = tag
         self._current_folder = folder
         self._navigation_target = navigation_target
+        self._craft_folder = None
         self._match_info = {}
         self._search_mode = False
         self._files_show_all = False
@@ -184,10 +206,51 @@ class FileList(Vertical):
             list_view.index = 0
             self.post_message(self.FileHighlighted(display_files[0]))
 
+    def update_craft_docs(self, docs: list[CraftDoc], folder_name: str) -> None:
+        """Show a Craft folder's documents instead of local files.
+
+        Remote docs are not Paths, so `_files` empties -- the file actions
+        (rename, delete, move, export) then see no selection, which is the
+        point: they operate on the filesystem and a Craft doc is not on it.
+        """
+        self._all_files = []
+        self._files = []
+        self._current_tag = None
+        self._current_folder = None
+        self._navigation_target = None
+        self._craft_folder = folder_name
+        self._match_info = {}
+        self._search_mode = False
+
+        search_input = self.search_input
+        search_input.remove_class("visible")
+        search_input.value = ""
+
+        header = self.query_one("#file-header", Static)
+        header.update(self.get_header_text())
+
+        list_view = self.list_view
+        list_view.clear()
+        for doc in docs:
+            list_view.append(CraftDocItem(doc))
+
+        if docs:
+            list_view.index = 0
+            self.post_message(self.CraftDocHighlighted(docs[0]))
+
+    def get_selected_craft_doc(self) -> CraftDoc | None:
+        """The highlighted Craft document, or None outside Craft browsing."""
+        item = self.list_view.highlighted_child
+        if isinstance(item, CraftDocItem):
+            return item.doc
+        return None
+
     def on_list_view_highlighted(self, event: ListView.Highlighted) -> None:
         """Handle file highlight (cursor moved)."""
         if event.item is not None and isinstance(event.item, FileItem):
             self.post_message(self.FileHighlighted(event.item.file_path))
+        elif event.item is not None and isinstance(event.item, CraftDocItem):
+            self.post_message(self.CraftDocHighlighted(event.item.doc))
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         """Handle file selection (click or Enter on already-highlighted item)."""
@@ -197,6 +260,8 @@ class FileList(Vertical):
         if event.item is not None and isinstance(event.item, FileItem):
             self.post_message(self.FileHighlighted(event.item.file_path))
             self.post_message(self.FileSelected(event.item.file_path))
+        elif event.item is not None and isinstance(event.item, CraftDocItem):
+            self.post_message(self.CraftDocHighlighted(event.item.doc))
 
     def _show_all_files(self) -> None:
         """Expand the file list to show all files."""
@@ -241,6 +306,8 @@ class FileList(Vertical):
             return f"FILES (#{self._current_tag})"
         elif self._current_folder:
             return f"FILES ({self._current_folder}/)"
+        elif self._craft_folder:
+            return f"FILES (craft: {self._craft_folder})"
         else:
             return "FILES"
 
@@ -263,6 +330,7 @@ class FileList(Vertical):
         self._current_tag = tag
         self._current_folder = None
         self._navigation_target = None
+        self._craft_folder = None
         self._match_info = {}
         list_view = self.list_view
         list_view.clear()
@@ -335,6 +403,7 @@ class FileList(Vertical):
         self._match_info = {}
         self._current_tag = None
         self._navigation_target = None
+        self._craft_folder = None
 
         list_view = self.list_view
         list_view.clear()

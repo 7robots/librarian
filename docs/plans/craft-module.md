@@ -1,6 +1,6 @@
 # Craft module
 
-Status: **awaiting approval** — no phase started
+Status: **phase 5 complete 2026-08-28** — phase 6 (prepend) next
 
 A Craft browsing module mirroring the folder browser: a sidebar panel of Craft folders driving the
 Files and Preview panels, backed by Craft's REST API (`connect.craft.do`), opt-in via
@@ -23,9 +23,10 @@ top of an existing note, which fits the one-big-note-per-meeting-series style.
 - **Surface**: REST API, not the MCP server — static bearer auth, works with Craft.app closed,
   returns markdown directly. `GET /folders`, `GET /documents?folderId=`, `GET /blocks?id=` with
   `Accept: text/markdown`, `POST /blocks` for prepend.
-- **Secrets**: connection URL and `pdk_` key are both secrets. Config stores `op://` references
-  (`[craft] connection_url_ref`, `api_key_ref`); resolved lazily via `op read` on a worker thread at
-  first use, as projection's SmartsheetClient does — never at startup, never stored in config.
+- **Secrets**: config stores the connection URL plainly (`[craft] api_url`, provided directly by
+  Jefferson; useless without the key) and a 1Password reference for the key (`api_key_ref` =
+  `op://Employee/Craft API Key/credential`), resolved lazily via `op read` on a worker thread at
+  first use, as projection's SmartsheetClient does — never at startup, never the value in config.
 - **HTTP client**: stdlib `urllib.request` — simple JSON GET/POST with timeouts; no new dependency
   for an opt-in module.
 - **UI**: `[tools] craft = false` (default). On: a CRAFT panel joins the sidebar (a Textual `Tree`
@@ -45,14 +46,16 @@ top of an existing note, which fits the one-big-note-per-meeting-series style.
 ### Phase 5 — v1: read-only browse, preview, open in Craft
 Intent: `craft.py` client (folders, docs, doc-as-markdown) + sidebar panel + preview; `e` on a Craft
 note opens it in Craft.app via `craftdocs://open?spaceId=&blockId=`.
-- [ ] `craft.py`: lazy `op read` credential resolution, list_folders / list_documents /
+- [x] `craft.py`: lazy `op read` credential resolution, list_folders / list_documents /
       fetch_document_markdown, token stripping, TTL cache, `CraftError` with specific causes
-- [ ] `[tools] craft` + `[craft]` config table (refs; `space_id` for the URL scheme), backfilled
-- [ ] `widgets/craft_tree.py` panel; `active_source = "craft"`; Files/Preview follow it;
+- [x] `[tools] craft` + `[craft]` config table (`api_url`, `api_key_ref`), backfilled
+- [x] `widgets/craft_tree.py` panel; `active_source = "craft"`; Files/Preview follow it;
       focus order and vim keys treat the panel like the other optional ones
-- [ ] `e` opens the selected Craft note in Craft.app
-- Verify: `uv run pytest tests/test_craft.py tests/test_craft_panel.py -q`
-- Status: not started
+- [x] `e` opens the selected Craft note in Craft.app via `clickableLink` (used verbatim — its
+      `documentId` is not the API `id`; no `space_id` config needed)
+- Verify: `uv run pytest tests/test_craft.py tests/test_craft_panel.py -q` — 32 passed 2026-08-28,
+  plus a live end-to-end client check against the real space
+- Status: **complete 2026-08-28**
 
 ### Phase 6 — v1.5: prepend flow for meeting notes
 Intent: compose a new occurrence in `$EDITOR` (temp `.md`), prepend it to the selected Craft note

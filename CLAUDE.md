@@ -20,13 +20,16 @@ src/librarian/
 ├── export.py            # Export to HTML functionality (with sanitization)
 ├── calendar.py          # calendar backend wrapper (calctl, or icalPal) + JSON parsing
 ├── calendar_store.py    # Event-to-file association storage (sidecar JSON)
+├── craft.py             # Craft REST API client (folders, docs, markdown) + lazy op-read key
+├── actions/craft_actions.py # Craft browsing wiring: workers, preview debounce, open-in-Craft
 ├── icons.py             # Icon-name -> terminal glyph tables (Nerd Font / emoji) + style detection
 ├── appearance.py        # Layered folder appearance: config > Notebook Navigator > defaults
 ├── obsidian.py          # Reads folder icons/colors from Obsidian's Notebook Navigator plugin
 └── widgets/
     ├── __init__.py
     ├── banner.py        # Custom ASCII art banner replacing default Textual Header
-    ├── tag_list.py      # Three-panel sidebar: Folders (top) + All Tags (middle) + Tools (bottom)
+    ├── craft_tree.py    # Tree of Craft folders (optional sidebar panel)
+    ├── tag_list.py      # Sidebar: Folders + optional Craft + All Tags + Tools
     ├── file_list.py     # Files for the selected folder or tag (ListView + search/navigation modes)
     ├── file_info.py     # RenameModal, MoveModal, and AssociateModal for file operations
     ├── calendar_list.py # Calendar meeting list widget
@@ -311,6 +314,12 @@ class ToolsConfig:
     reminders: bool = False   # show the Reminders tool (needs remtui)
     calendar: bool = False    # show the Calendar tool (needs calctl or icalPal)
     projects: bool = False    # show the Projects tool (needs projection)
+    craft: bool = False       # show the Craft panel (needs a Craft API connection)
+
+@dataclass
+class CraftConfig:
+    api_url: str = ""      # connection URL (connect.craft.do/links/<id>/api/v1)
+    api_key_ref: str = ""  # 1Password reference, resolved via `op read` at first use
 
 @dataclass
 class Config:
@@ -799,6 +808,53 @@ executable, the opt-in gate, embed-preferred-over-handoff) and always runs; `tes
 covers the embed and skips via `importorskip`. The latter uses a local copy of projection's `FakeSync`
 rather than importing it, so a change in projection's own suite cannot silently alter what is tested
 here.
+
+## Craft (browsing)
+
+`[tools] craft = true` adds a CRAFT panel to the sidebar (between Folders and Tags): a tree of the
+Craft space's folders over the official REST API. Highlighting a folder lists its documents in the
+Files panel (`active_source = "craft"`), highlighting a document previews its markdown, and `e`
+opens it in Craft.app. Full plan: `docs/plans/craft-module.md` (prepend flow is phase 6).
+
+```toml
+[tools]
+craft = true
+
+[craft]
+api_url = "https://connect.craft.do/links/<id>/api/v1"   # space-level API connection
+api_key_ref = "op://Employee/Craft API Key/credential"    # resolved via `op read` at first use
+```
+
+Things that are deliberate and easy to "fix" back into bugs:
+
+- **The key is never stored or logged** — `craft.py` resolves the `op://` reference lazily on the
+  first request, on a worker thread, so startup never blocks on 1Password. An `authorization
+  timeout` from `op` is reported as "unlock the 1Password app".
+- **Every request sends `User-Agent: librarian`.** Craft's edge returns 403 to urllib's default
+  `Python-urllib/*` agent (verified live: 403 with it, 200 with anything else).
+- **Open-in-Craft uses `clickableLink` verbatim.** The link's `documentId` is a *different*
+  identifier from the API's document `id`, so the link cannot be rebuilt locally — and
+  `GET /connection` supplies the space's URL template if one is ever needed.
+- **Markdown arrives in an envelope** — `<page><pageTitle><content>` with 4-space indentation —
+  which `unwrap_page_markdown()` strips and dedents, along with Craft tokens (`<callout>`,
+  `<highlight>`, `<caption>`), keeping their inner text.
+- **`CraftTree.update_folders()` leaves the cursor unset.** Placing it fires `NodeHighlighted` the
+  moment folders load, which switched the Files panel to Craft at startup without the user touching
+  the panel. Pinned by `test_loading_folders_does_not_steal_the_files_panel`.
+- **Highlight handlers check staleness *before* cancelling preview timers.** ListView emits
+  highlights asynchronously, so an event for a replaced listing (a local file after Craft docs
+  loaded, or vice versa) can arrive after the new listing armed its debounce timer — cancel-first
+  killed the Craft preview entirely.
+- **Failures raise `CraftError`, never an empty listing** — same contract as the calendar. Folder
+  errors render in the panel; all fetch workers run `exit_on_error=False`.
+- Craft docs are not files: `FileList.update_craft_docs()` empties `_files`, so the file actions
+  (rename/delete/move/export) see no selection. `SYSTEM_FOLDER_IDS` (unsorted, daily notes, trash,
+  templates) are excluded from the tree. Listings and doc markdown share a 5-minute TTL cache.
+
+Tests: `test_craft.py` (client; canned transport, no network) and `test_craft_panel.py` (UI; a
+`FakeCraft` injected by patching `CraftClient` at the mixin's constructor call site). The panel
+tests poll for visible outcomes via `wait_until` — `workers.wait_for_complete()` hangs/raises once
+the exclusive preview group cancels a superseded worker.
 
 ## Export to HTML
 

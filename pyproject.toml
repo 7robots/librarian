@@ -31,6 +31,7 @@ librarian = "librarian.__main__:main"
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=1.4.0",
+    "pytest-timeout>=2.4.0",
 ]
 
 [build-system]

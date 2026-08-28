@@ -26,6 +26,8 @@ class NavigationActionsMixin:
             return tools if list(tools.children) else None
         elif widget_id == "directory-tree":
             return tag_list.directory_tree
+        elif widget_id == "craft-tree":
+            return tag_list.craft_tree
         elif widget_id == "all-tags-list-view":
             return tag_list.all_tags_list_view
         elif widget_id == "file-list-view":
@@ -45,15 +47,19 @@ class NavigationActionsMixin:
         preview = self.query_one("#preview", Preview)
 
         focus_map = {
-            id(tag_list.all_tags_list_view): 1,
-            id(tag_list.tools_list_view): 2,
-            id(file_list.list_view): 3,
-            id(preview.scroll_view): 4,
+            id(tag_list.all_tags_list_view): 2,
+            id(tag_list.tools_list_view): 3,
+            id(file_list.list_view): 4,
+            id(preview.scroll_view): 5,
         }
-        # The folder browser is optional, so the tree may not exist at all.
+        # The folder browser and Craft panels are optional, so either tree may
+        # not exist at all.
         tree = tag_list.directory_tree
         if tree is not None:
             focus_map[id(tree)] = 0
+        craft = tag_list.craft_tree
+        if craft is not None:
+            focus_map[id(craft)] = 1
         return focus_map.get(id(focused), -1)
 
     def action_focus_next(self) -> None:
@@ -221,26 +227,28 @@ class NavigationActionsMixin:
             )
 
     def action_vim_expand(self) -> None:
-        """`l` in the folder tree: expand, or step into an open folder."""
+        """`l` in a tree: expand, or step into an open folder.
+
+        Acts on the focused tree -- there are two now (Folders and Craft), and
+        `_vim_tree_node` already guarantees `self.focused` is a Tree.
+        """
         node = self._vim_tree_node()
         if node is None:
             return
         if node.allow_expand and not node.is_expanded:
             node.expand()
         elif node.children:
-            self.query_one("#tag-list", TagList).directory_tree.move_cursor(
-                node.children[0]
-            )
+            self.focused.move_cursor(node.children[0])
 
     def action_vim_collapse(self) -> None:
-        """`h` in the folder tree: collapse, or step out to the parent."""
+        """`h` in a tree: collapse, or step out to the parent."""
         node = self._vim_tree_node()
         if node is None:
             return
         if node.is_expanded:
             node.collapse()
         elif node.parent is not None:
-            self.query_one("#tag-list", TagList).directory_tree.move_cursor(node.parent)
+            self.focused.move_cursor(node.parent)
 
     def _vim_tree_node(self):
         """The folder tree's cursor node, or None when the tree is not focused."""
@@ -347,6 +355,9 @@ class NavigationActionsMixin:
 
         # Back to whichever panel drives the Files list.
         tag_list = self.query_one("#tag-list", TagList)
+        if tag_list.active_source == "craft" and tag_list.craft_tree is not None:
+            tag_list.craft_tree.focus()
+            return
         tree = tag_list.directory_tree
         if tag_list.active_source == "tags" or tree is None:
             tag_list.all_tags_list_view.focus()
