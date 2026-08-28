@@ -24,6 +24,12 @@ Two things worth keeping on this side:
   which survives `./install.sh` — that syncs `--inexact` — but a bare `uv sync` is exact and would
   replace it with the published package.
 
+### Create a new Craft note from Librarian
+Deferred out of the Craft module plan (`docs/plans/craft-module.md`, phases 5–7): the plan ships
+browsing, preview, open-in-Craft, and the prepend flow for existing meeting notes. Creating a note
+is a different flow — folder choice, title, template, tag line — and `POST /documents` is a single
+documented endpoint, so it layers on cleanly once the module exists. Promote to a plan when wanted.
+
 ### Rethink what `q` means inside an embedded panel
 **Needs a design conversation before any code.** Right now `q` is overloaded and the behavior reads
 as inconsistent depending on which panel is open:
