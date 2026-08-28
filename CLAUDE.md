@@ -310,6 +310,7 @@ class Config:
 @dataclass
 class ToolsConfig:
     folders: bool = True      # show the Folders panel (needs nothing, so on by default)
+    tags: bool = True         # show the All Tags panel (needs nothing, so on by default)
     taskpaper: bool = False   # show the TaskPaper tool (needs taskpapertui)
     reminders: bool = False   # show the Reminders tool (needs remtui)
     calendar: bool = False    # show the Calendar tool (needs calctl or icalPal)
