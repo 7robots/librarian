@@ -850,8 +850,12 @@ api_key_ref = "op://Employee/Craft API Key/credential"    # resolved via `op rea
 Things that are deliberate and easy to "fix" back into bugs:
 
 - **The key is never stored or logged** — `craft.py` resolves the `op://` reference lazily on the
-  first request, on a worker thread, so startup never blocks on 1Password. An `authorization
-  timeout` from `op` is reported as "unlock the 1Password app".
+  first request, on a worker thread, behind a lock (two overlapping first requests would prompt
+  1Password twice). An `authorization timeout` from `op` is reported as "unlock the 1Password app".
+- **Nothing is fetched until the panel is first focused.** The first fetch runs `op read`, and a
+  1Password prompt at startup for a panel never touched is the projection lesson already learned
+  once. The tree shows "(select to load)" until focused; a failed load resets the request so the
+  next focus retries. `e` on a Craft doc hands `open` only `craftdocs://` links, verbatim.
 - **Every request sends `User-Agent: librarian`.** Craft's edge returns 403 to urllib's default
   `Python-urllib/*` agent (verified live: 403 with it, 200 with anything else).
 - **Open-in-Craft uses `clickableLink` verbatim.** The link's `documentId` is a *different*

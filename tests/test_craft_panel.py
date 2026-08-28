@@ -125,16 +125,20 @@ def craft_labels(app) -> list[str]:
     return [str(node.label) for node in tree.root.children]
 
 
+async def focus_and_load(app, pilot) -> None:
+    """Focus the Craft panel (which triggers the first fetch) and let it load."""
+    tree = app.query_one(TagList).craft_tree
+    tree.focus()
+    await wait_until(pilot, lambda: craft_labels(app) == ["meetings (1)"])
+
+
 async def highlight_meetings(app, pilot) -> None:
     """Put the Craft tree cursor on the 'meetings' folder and let docs load.
 
     The cursor moves by key, as a user's would: assigning `cursor_line` before
     the tree's first layout finds no node at that line and emits no highlight.
     """
-    await wait_until(pilot, lambda: craft_labels(app) == ["meetings (1)"])
-    tree = app.query_one(TagList).craft_tree
-    tree.focus()
-    await pilot.pause()
+    await focus_and_load(app, pilot)
     await pilot.press("down")
     await wait_until(
         pilot,
@@ -168,9 +172,18 @@ class TestPanel:
             assert client.api_url == "https://example.test/api/v1"
             assert client.api_key_ref == "op://x/y/z"
 
-    async def test_folders_load_into_the_tree(self, app):
+    async def test_nothing_is_fetched_until_the_panel_is_focused(self, app):
+        """The fetch runs `op read`; a 1Password prompt at startup for a panel
+        never touched is the projection lesson learned once already."""
         async with app.run_test(size=(100, 40)) as pilot:
-            await wait_until(pilot, lambda: craft_labels(app) == ["meetings (1)"])
+            for _ in range(6):
+                await pilot.pause(0.05)
+            assert craft_labels(app) == ["(select to load)"]
+
+    async def test_folders_load_on_first_focus(self, app):
+        async with app.run_test(size=(100, 40)) as pilot:
+            await pilot.pause()
+            await focus_and_load(app, pilot)
 
     async def test_a_broken_connection_shows_in_the_panel(
         self, config, tmp_index, monkeypatch
@@ -182,6 +195,7 @@ class TestPanel:
         )
         app = LibrarianApp(config)
         async with app.run_test(size=(100, 40)) as pilot:
+            app.query_one(TagList).craft_tree.focus()
             await wait_until(
                 pilot,
                 lambda: any("1Password is locked" in l for l in craft_labels(app)),
@@ -194,9 +208,11 @@ class TestPanel:
             assert app.focused is tag_list.directory_tree
 
     async def test_loading_folders_does_not_steal_the_files_panel(self, app):
-        """Folders arriving must not switch the source away from startup's."""
+        """Folders arriving must not switch the source away from folders --
+        focusing the panel loads the tree, but only a cursor move selects."""
         async with app.run_test(size=(100, 40)) as pilot:
-            await wait_until(pilot, lambda: craft_labels(app) == ["meetings (1)"])
+            await pilot.pause()
+            await focus_and_load(app, pilot)
             await pilot.pause()
             assert app.query_one(TagList).active_source == "folders"
 

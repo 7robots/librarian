@@ -34,10 +34,18 @@ class CraftActionsMixin:
         return self.query_one("#tag-list", TagList).craft_tree
 
     def _init_craft(self) -> None:
-        """Build the client and start loading folders. Called once at mount."""
+        """Build the client. Called once at mount; fetches nothing.
+
+        The folder fetch waits for the panel's first focus (see CraftTree),
+        because it resolves the API key via `op read` -- a possible 1Password
+        prompt that must not fire at startup.
+        """
         self._craft = CraftClient(
             self.config.craft.api_url, self.config.craft.api_key_ref
         )
+
+    def on_craft_tree_load_requested(self, event: CraftTree.LoadRequested) -> None:
+        """First focus on the Craft panel: fetch the folder tree."""
         tree = self._craft_tree()
         if tree is not None:
             tree.show_message("loading…")
@@ -106,8 +114,12 @@ class CraftActionsMixin:
         )
 
     def _do_craft_preview(self, doc: CraftDoc) -> None:
-        """Start the markdown fetch once the cursor has settled on a doc."""
-        self._preview_timer = None
+        """Start the markdown fetch once the cursor has settled on a doc.
+
+        Cancels rather than assigns: the prepend success handler calls this
+        directly, and a plain `= None` there would orphan an armed timer.
+        """
+        self._cancel_preview_timers()
         # Same worker group as local previews, so whichever the cursor lands on
         # last -- file or Craft doc -- cancels the load it supersedes.
         self.run_worker(
@@ -177,7 +189,9 @@ class CraftActionsMixin:
             with self.suspend():
                 subprocess.run([editor, str(tmp)], check=False)
 
-            content = tmp.read_text(encoding="utf-8")
+            # errors="replace": an editor that saved non-UTF-8 still carries
+            # the user's occurrence; mangled characters beat a crash.
+            content = tmp.read_text(encoding="utf-8", errors="replace")
         except OSError as e:
             self.notify(f"Could not compose occurrence: {e}", severity="error")
             return
@@ -205,7 +219,9 @@ class CraftActionsMixin:
         The link is used verbatim -- its `documentId` is not the API `id`, so
         it cannot be rebuilt locally.
         """
-        if not doc.clickable_link:
+        # The link comes from the API; only the Craft scheme is ever handed to
+        # `open`, so unexpected data cannot launch anything else.
+        if not doc.clickable_link.startswith("craftdocs://"):
             self.notify(
                 f"No Craft link for '{doc.title}'", severity="warning"
             )

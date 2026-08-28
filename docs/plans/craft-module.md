@@ -1,6 +1,12 @@
 # Craft module
 
-Status: **phase 6 complete 2026-08-28** — review pass, then phase 7 (acceptance gate)
+Status: **phases 5–6 complete, review pass done 2026-08-28** — phase 7 (acceptance gate) remains
+
+Review pass (fresh agent, 2026-08-28): 9 findings, all triaged fix-now and fixed — key-resolution
+lock, deferred first fetch (no `op read` at startup), search-mode guard on the docs handler,
+stale-refresh guard after prepend, timer-orphan fix, `craftdocs://` scheme check on `open`,
+non-UTF-8 editor tolerance, unwrap regex word boundary, JSON-null tolerance. The one open question
+(dangling `siblingId`) was closed live: the API 404s, no daily-note fallback.
 
 A Craft browsing module mirroring the folder browser: a sidebar panel of Craft folders driving the
 Files and Preview panels, backed by Craft's REST API (`connect.craft.do`), opt-in via

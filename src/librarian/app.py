@@ -259,6 +259,9 @@ class LibrarianApp(
                 tree = self._craft_tree()
                 if tree is not None:
                     tree.show_message(message)
+                    # Let the next focus retry -- e.g. after unlocking
+                    # 1Password.
+                    tree.reset_load_request()
                 self.notify(message, severity="error", timeout=8)
             elif worker_name in ("_fetch_craft_docs", "_load_craft_preview"):
                 message = str(event.worker.error) or "Craft fetch failed"
@@ -316,10 +319,15 @@ class LibrarianApp(
             if result is not None:
                 folder, docs = result
                 tag_list = self.query_one("#tag-list", TagList)
+                file_list = self.query_one("#file-list", FileList)
                 # Stale results must not overwrite a source the user has since
-                # moved on to.
-                if tag_list.active_source == "craft":
-                    file_list = self.query_one("#file-list", FileList)
+                # moved on to -- and a slow fetch landing mid-search must not
+                # tear down the search UI (update_craft_docs force-exits it).
+                if (
+                    tag_list.active_source == "craft"
+                    and not file_list.is_search_mode()
+                    and not file_list.is_navigation_mode()
+                ):
                     file_list.update_craft_docs(docs, folder.name)
 
         elif worker_name == "_load_craft_preview":
@@ -339,8 +347,13 @@ class LibrarianApp(
                 doc, _ = result
                 self.notify(f"Added to '{doc.title}'")
                 # The client invalidated the doc's cached markdown; refetch so
-                # the preview shows the note with its new occurrence on top.
-                self._do_craft_preview(doc)
+                # the preview shows the note with its new occurrence on top --
+                # but only while that doc is still selected, or the refresh
+                # would cancel the newly selected doc's own in-flight preview.
+                file_list = self.query_one("#file-list", FileList)
+                selected = file_list.get_selected_craft_doc()
+                if selected is not None and selected.id == doc.id:
+                    self._do_craft_preview(doc)
 
         elif worker_name == "_load_preview":
             result = event.worker.result

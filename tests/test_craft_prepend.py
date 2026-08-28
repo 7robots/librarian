@@ -216,12 +216,15 @@ async def select_craft_doc(app, pilot) -> None:
     file_list = app.query_one(FileList)
     await wait_until(pilot, lambda: file_list._files)
 
+    # Focusing the panel triggers the first fetch; the cursor then moves by
+    # key, as a user's would -- assigning cursor_line before the tree's first
+    # layout finds no node at that line and emits nothing.
     tree = app.query_one(TagList).craft_tree
-    await wait_until(pilot, lambda: tree.root.children)
     tree.focus()
-    await pilot.pause()
-    # Move the cursor by key, as a user would: assigning cursor_line before
-    # the tree's first layout finds no node at that line and emits nothing.
+    await wait_until(
+        pilot,
+        lambda: any("meetings" in str(n.label) for n in tree.root.children),
+    )
     await pilot.press("down")
     await wait_until(pilot, lambda: file_list.get_selected_craft_doc() == DOC)
 

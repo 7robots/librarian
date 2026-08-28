@@ -15,6 +15,7 @@ import json
 import re
 import subprocess
 import textwrap
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -135,8 +136,13 @@ def unwrap_page_markdown(text: str) -> str:
     match = re.search(r"<content>\n(.*)\n\s*</content>", text, re.DOTALL)
     if match is not None:
         text = textwrap.dedent(match.group(1))
+    # The lookahead keeps the strip to exactly these tag names: without it,
+    # unrelated words in angle brackets (<pages>, <contented>) vanish from
+    # the preview too.
     return re.sub(
-        r"</?(?:page|pageTitle|content|callout|highlight|caption)[^>]*>", "", text
+        r"</?(?:page|pageTitle|content|callout|highlight|caption)(?=[\s/>])[^>]*>",
+        "",
+        text,
     )
 
 
@@ -147,6 +153,10 @@ class CraftClient:
         self._api_url = api_url.rstrip("/")
         self._api_key_ref = api_key_ref
         self._api_key: str | None = None
+        # Requests run on worker threads; without the lock, two first-use
+        # fetches overlapping would run `op read` twice -- two 1Password
+        # authorization prompts for one key.
+        self._key_lock = threading.Lock()
         self._cache: dict[str, tuple[float, object]] = {}
 
     # -- transport ---------------------------------------------------------
@@ -164,8 +174,9 @@ class CraftClient:
                 "No Craft connection URL configured. "
                 "Set api_url under [craft] to the connection's API URL."
             )
-        if self._api_key is None:
-            self._api_key = resolve_api_key(self._api_key_ref)
+        with self._key_lock:
+            if self._api_key is None:
+                self._api_key = resolve_api_key(self._api_key_ref)
 
         headers = {
             "Authorization": f"Bearer {self._api_key}",
@@ -222,9 +233,11 @@ class CraftClient:
 
     def _load_folders(self) -> list[CraftFolder]:
         data = self._get_json("/folders")
+        # `or []` throughout: an explicit JSON null must read as empty, not
+        # surface a raw TypeError in a notification (icalPal taught this).
         return [
             _parse_folder(raw)
-            for raw in data.get("items", [])
+            for raw in data.get("items") or []
             if raw.get("id") not in SYSTEM_FOLDER_IDS
         ]
 
@@ -239,7 +252,7 @@ class CraftClient:
             {"folderId": folder_id, "fetchMetadata": "true"}
         )
         data = self._get_json(f"/documents?{query}")
-        return [_parse_doc(raw) for raw in data.get("items", [])]
+        return [_parse_doc(raw) for raw in data.get("items") or []]
 
     def fetch_document_markdown(self, doc_id: str) -> str:
         """A document's body as plain markdown."""
@@ -260,7 +273,7 @@ class CraftClient:
         data = self._get_json(f"/blocks?{query}")
         return [
             (str(raw.get("id", "")), str(raw.get("markdown", "")))
-            for raw in data.get("content", [])
+            for raw in data.get("content") or []
         ]
 
     def prepend_markdown(self, doc_id: str, markdown: str) -> None:
@@ -279,6 +292,10 @@ class CraftClient:
         if not doc_id:
             raise CraftError("prepend needs a document id -- refusing to send")
 
+        # The sibling anchor cannot carry a pageId too (the API 400s on both
+        # keys together), but the race is closed server-side: a siblingId that
+        # no longer exists 404s rather than falling back to the daily note --
+        # verified live 2026-08-28.
         children = self.list_child_blocks(doc_id)
         if children and children[0][0] and is_tag_line(children[0][1]):
             position = {"position": "after", "siblingId": children[0][0]}
@@ -309,7 +326,7 @@ def _parse_folder(raw: dict) -> CraftFolder:
         id=str(raw.get("id", "")),
         name=str(raw.get("name", "")),
         document_count=int(raw.get("documentCount") or 0),
-        folders=[_parse_folder(child) for child in raw.get("folders", [])],
+        folders=[_parse_folder(child) for child in raw.get("folders") or []],
     )
 
 

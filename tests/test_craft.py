@@ -93,6 +93,11 @@ class TestUnwrapPageMarkdown:
     def test_plain_markdown_passes_through(self):
         assert unwrap_page_markdown("# Title\n\nbody") == "# Title\n\nbody"
 
+    def test_unrelated_angle_bracket_words_survive(self):
+        """Only Craft's exact tag names are stripped, not words containing them."""
+        text = "uses <pages> and <contented> and <caption-foo>"
+        assert unwrap_page_markdown(text) == text
+
 
 class TestListFolders:
     def test_system_folders_are_filtered(self):
@@ -123,6 +128,11 @@ class TestListFolders:
         client = client_with({"/folders": "not json"})
         with pytest.raises(CraftError, match="unreadable"):
             client.list_folders()
+
+    def test_explicit_null_items_read_as_empty(self):
+        """A JSON null must not surface a raw TypeError (the icalPal lesson)."""
+        client = client_with({"/folders": '{"items": null}'})
+        assert client.list_folders() == []
 
 
 class TestListDocuments:
