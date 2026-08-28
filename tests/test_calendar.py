@@ -5,7 +5,7 @@ Apple's reference epoch, plus `sctime`/`ectime` strings carrying the occurrence
 and a UTC offset.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -160,7 +160,12 @@ class TestParseEvent:
         ]
         events.sort(key=lambda e: e.start)
 
-        assert [e.start.strftime("%H:%M") for e in events] == ["08:45", "10:00", "14:00"]
+        # The timestamp fallback localizes to the machine's timezone, so pin
+        # the comparison to the fixtures' -0400 rather than local wall clock.
+        eastern = timezone(timedelta(hours=-4))
+        assert [
+            e.start.astimezone(eastern).strftime("%H:%M") for e in events
+        ] == ["08:45", "10:00", "14:00"]
 
 
 class TestFindBackend:
