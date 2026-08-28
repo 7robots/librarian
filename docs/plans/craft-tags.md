@@ -1,6 +1,6 @@
 # Craft tags: a source-scoped Tags panel
 
-Status: **phases 8–9 complete 2026-08-28** — phase 10 (acceptance gate) remains
+Status: **complete 2026-08-28** — all phases done, gate passed
 
 The Tags panel follows the active browsing source: local index tags while browsing Folders, Craft
 tags while browsing the Craft tree. Selecting a Craft tag lists its documents in the Files panel.
@@ -63,9 +63,11 @@ browser", which this plan implements).
 
 ### Phase 10 — acceptance gate
 Run once, at the end, against the real space:
-- [ ] Launch with folders+tags+craft all on. Browse local folders (ALL TAGS shows index tags);
+- [x] Launch with folders+tags+craft all on. Browse local folders (ALL TAGS shows index tags);
       move into the Craft tree (header flips to CRAFT TAGS, the three real tags appear with
       counts); select `#meetings` (its docs list with correct titles, newest first); preview one;
       `e` opens the *right* document in Craft.app (the template-link gate item); `a` prepends to
       it; move back to the folder tree and confirm ALL TAGS returns with the local tags intact
-- Status: not started
+- Status: **passed 2026-08-28**, run by Jefferson against the real space, no issues observed —
+  including the template-link gate item. Follow-ups went to `docs/ROADMAP.md` ("Links inside Craft
+  previews"; sidebar layout still under discussion)

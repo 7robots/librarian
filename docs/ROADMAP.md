@@ -24,6 +24,16 @@ Two things worth keeping on this side:
   which survives `./install.sh` — that syncs `--inexact` — but a bare `uv sync` is exact and would
   replace it with the published package.
 
+### Links inside Craft previews
+From the craft-tags acceptance gate (2026-08-28): links in a previewed Craft document don't work.
+Two kinds need handling in `Preview`'s link-click path (which today intercepts only `wikilink:`
+URLs, with `open_links=False` swallowing the rest): **external links** should open in the browser
+(`open <url>`, probably gated to http/https), and **Craft document links** should either navigate
+within Librarian (resolve the target doc, fetch its markdown — the wiki-link navigation stack is
+the precedent) or open in Craft.app. Craft doc links appear in markdown as `craftdocs://` or
+`https://docs.craft.do/...` URLs; which forms the API emits in exported markdown needs a look
+first.
+
 ### ~~Craft tags browser~~ — done 2026-08-28 (plan: docs/plans/craft-tags.md)
 From the Craft-module acceptance gate (2026-08-28). The `[tools] tags` switch half landed the same
 day (tags panel optional, default on; `folders=false, tags=false, craft=true` gives a Craft-only
