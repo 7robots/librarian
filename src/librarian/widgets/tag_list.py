@@ -310,6 +310,13 @@ class TagList(Vertical):
             super().__init__()
             self.folder = folder
 
+    class CraftTagSelected(Message):
+        """Message emitted when a tag is selected while Craft-scoped."""
+
+        def __init__(self, tag_name: str) -> None:
+            super().__init__()
+            self.tag_name = tag_name
+
     def __init__(
         self,
         scan_directory: Path | None = None,
@@ -338,6 +345,11 @@ class TagList(Vertical):
         else:
             self.active_source = "craft"
         self._tags_show_all: bool = False
+        # Which source the Tags panel reflects: "local" (the index) or
+        # "craft". Follows whichever tree was last highlighted, so the panel
+        # always shows the tags of what is being browsed.
+        self.tags_scope: str = "local"
+        self._craft_tags: list[tuple[str, int]] = []
 
     def compose(self) -> ComposeResult:
         # Three permanent panels. Folders and Tags are both visible because they
@@ -415,14 +427,48 @@ class TagList(Vertical):
         except Exception:
             pass  # Tree not yet mounted
 
+    def set_tags_scope(self, scope: str) -> None:
+        """Point the Tags panel at a source's tags ("local" or "craft").
+
+        Each scope's listing is kept, so flipping back is a repopulation from
+        memory, not a refetch.
+        """
+        if scope == self.tags_scope or not self.show_tags:
+            return
+        self.tags_scope = scope
+        self.query_one("#all-tags-header", Static).update(
+            "CRAFT TAGS" if scope == "craft" else "ALL TAGS"
+        )
+        self._repopulate_scope()
+
+    def update_craft_tags(self, tags: list[tuple[str, int]]) -> None:
+        """Update the Craft tag listing (shown only while Craft-scoped)."""
+        self._craft_tags = tags
+        if self.tags_scope == "craft":
+            self._repopulate_scope()
+
+    def _repopulate_scope(self) -> None:
+        """Rebuild the tags list from the current scope's stored tags."""
+        list_view = self.all_tags_list_view
+        if list_view is None:
+            return
+        tags = self._craft_tags if self.tags_scope == "craft" else self._all_tags
+        list_view.clear()
+        for tag_name, count in tags:
+            list_view.append(TagItem(tag_name, count))
+        if tags:
+            list_view.index = 0
+
     def update_tags(self, tags: list[tuple[str, int]]) -> None:
         """Update the list of tags with incremental updates."""
         if self.all_tags_list_view is None:
             return  # Tags panel turned off
 
-        selected_tag = self.get_selected_tag()
-
         self._all_tags = tags
+        if self.tags_scope != "local":
+            return  # stored; shown again when the scope flips back
+
+        selected_tag = self.get_selected_tag()
 
         # Apply display cap for large collections unless user expanded
         if not self._tags_show_all and len(tags) > MAX_DISPLAY_TAGS:
@@ -523,10 +569,15 @@ class TagList(Vertical):
             self.update_tags(self._all_tags)
             return
 
-        # Handle tag list selection
+        # Handle tag list selection -- which source's tag it is depends on
+        # the panel's scope.
         if isinstance(item, TagItem):
-            self.active_source = "tags"
-            self.post_message(self.TagSelected(item.tag_name))
+            if self.tags_scope == "craft":
+                self.active_source = "craft-tags"
+                self.post_message(self.CraftTagSelected(item.tag_name))
+            else:
+                self.active_source = "tags"
+                self.post_message(self.TagSelected(item.tag_name))
 
     def on_directory_tree_file_selected(self, event: DirectoryTree.FileSelected) -> None:
         """Handle file selection from directory tree."""
@@ -542,12 +593,14 @@ class TagList(Vertical):
         data = getattr(event.node, "data", None)
         if isinstance(data, CraftFolder):
             self.active_source = "craft"
+            self.set_tags_scope("craft")
             self.post_message(self.CraftFolderHighlighted(data))
             return
 
         folder = self._folder_for_node(event.node)
         if folder is not None:
             self.active_source = "folders"
+            self.set_tags_scope("local")
             self.post_message(self.FolderHighlighted(folder))
 
     @staticmethod

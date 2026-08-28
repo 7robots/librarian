@@ -823,6 +823,24 @@ Files panel (`active_source = "craft"`), highlighting a document previews its ma
 it in Craft.app, and `a` prepends a new occurrence (composed in the editor) to the selected note.
 Full plan: `docs/plans/craft-module.md`.
 
+### Source-scoped Tags panel
+The Tags panel follows whichever tree was last highlighted: local index tags (ALL TAGS) while
+browsing Folders, Craft tags (CRAFT TAGS) while browsing the Craft tree. Each scope's listing is
+stored and restored without refetching, and a background rescan landing while Craft-scoped stores
+the new local tags instead of painting them. Selecting a Craft tag sets
+`active_source = "craft-tags"` and lists the tag's documents (`FILES (craft: #tag)`) — preview,
+`e`, and `a` all work from that listing. `t` forces the scope back to local before hunting for
+#taskpaper.
+
+Craft has no list-tags endpoint, so `search_tags()` runs one space-wide RE2 sweep
+(`/documents/search`) and extracts tags from the result *snippets* with the `**` match-markers
+stripped — `fetchBlocks` is no help, returning the enclosing page block (the title) for most
+matches. Per-tag listings resolve titles from cached folder listings when browsing has warmed
+them (free, and with the doc's real `clickableLink`), else one title GET per doc on a two-worker
+pool — a full folder walk (116 folders, ~75s) and six workers (429) were both rejected against
+the live API. `_request` retries once on 5xx/429, honoring Retry-After. Tag semantics mirror the
+scanner exactly: same pattern, case-insensitive dedupe keeping first-seen casing, count-desc sort.
+
 ### Prepend (`a` on a Craft note)
 Writing is prepend-only, deliberately: whole-document replace would mint new block ids for every
 block, breaking deeplinks and comments. `a` opens the editor on a `## <date>` template; saving

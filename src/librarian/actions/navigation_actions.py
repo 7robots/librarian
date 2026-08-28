@@ -362,6 +362,7 @@ class NavigationActionsMixin:
             "craft": tag_list.craft_tree,
             "folders": tag_list.directory_tree,
             "tags": tag_list.all_tags_list_view,
+            "craft-tags": tag_list.all_tags_list_view,
         }
         panel = preferred.get(tag_list.active_source)
         if panel is None:

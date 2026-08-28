@@ -155,6 +155,12 @@ class FakeCraft:
     def prepend_markdown(self, doc_id: str, markdown: str) -> None:
         self.prepends.append((doc_id, markdown))
 
+    def search_tags(self) -> list[tuple[str, int]]:
+        return []
+
+    def search_documents_by_tag(self, tag: str) -> list[CraftDoc]:
+        return []
+
     def clear_cache(self) -> None:
         pass
 

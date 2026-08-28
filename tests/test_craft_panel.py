@@ -62,6 +62,12 @@ class FakeCraft:
 
     markdown = "## Latest occurrence\n\ndiscussed things"
 
+    def search_tags(self) -> list[tuple[str, int]]:
+        return []
+
+    def search_documents_by_tag(self, tag: str) -> list[CraftDoc]:
+        return []
+
     def clear_cache(self) -> None:
         self.cache_cleared = True
 

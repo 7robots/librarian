@@ -24,7 +24,7 @@ Two things worth keeping on this side:
   which survives `./install.sh` — that syncs `--inexact` — but a bare `uv sync` is exact and would
   replace it with the published package.
 
-### Craft tags browser
+### ~~Craft tags browser~~ — done 2026-08-28 (plan: docs/plans/craft-tags.md)
 From the Craft-module acceptance gate (2026-08-28). The `[tools] tags` switch half landed the same
 day (tags panel optional, default on; `folders=false, tags=false, craft=true` gives a Craft-only
 sidebar). What remains is the Craft tags feature itself, design agreed as **source-scoped**: the

@@ -90,6 +90,47 @@ class CraftActionsMixin:
         """Show the highlighted Craft folder's documents in the Files panel."""
         self._nav_stack.clear()
         self._fetch_craft_docs(event.folder)
+        # Browsing Craft scopes the Tags panel to Craft's tags; discovery is
+        # one cached search, so repeat visits are free.
+        self.run_worker(
+            self._craft.search_tags,
+            name="_fetch_craft_tags",
+            thread=True,
+            group="craft-tags",
+            exclusive=True,
+            exit_on_error=False,
+        )
+
+    def on_tag_list_craft_tag_selected(
+        self, event: TagList.CraftTagSelected
+    ) -> None:
+        """List a Craft tag's documents in the Files panel."""
+        self._nav_stack.clear()
+        tag = event.tag_name
+        self.notify(f"Loading #{tag} from Craft…")
+        self.run_worker(
+            lambda: (tag, self._craft.search_documents_by_tag(tag)),
+            name="_fetch_craft_tag_docs",
+            thread=True,
+            group="craft-docs",
+            exclusive=True,
+            exit_on_error=False,
+        )
+
+    def _refresh_craft_tag_docs(self) -> None:
+        """Repopulate the Files panel for the selected Craft tag (cached)."""
+        tag_list = self.query_one("#tag-list", TagList)
+        tag = tag_list.get_selected_tag()
+        if tag is None:
+            return
+        self.run_worker(
+            lambda: (tag, self._craft.search_documents_by_tag(tag)),
+            name="_fetch_craft_tag_docs",
+            thread=True,
+            group="craft-docs",
+            exclusive=True,
+            exit_on_error=False,
+        )
 
     def on_file_list_craft_doc_highlighted(
         self, event: FileList.CraftDocHighlighted

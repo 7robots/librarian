@@ -264,7 +264,12 @@ class LibrarianApp(
                     # 1Password.
                     tree.reset_load_request()
                 self.notify(message, severity="error", timeout=8)
-            elif worker_name in ("_fetch_craft_docs", "_load_craft_preview"):
+            elif worker_name in (
+                "_fetch_craft_docs",
+                "_fetch_craft_tags",
+                "_fetch_craft_tag_docs",
+                "_load_craft_preview",
+            ):
                 message = str(event.worker.error) or "Craft fetch failed"
                 self.notify(message, severity="error", timeout=8)
             elif worker_name == "_craft_prepend":
@@ -330,6 +335,26 @@ class LibrarianApp(
                     and not file_list.is_navigation_mode()
                 ):
                     file_list.update_craft_docs(docs, folder.name)
+
+        elif worker_name == "_fetch_craft_tags":
+            result = event.worker.result
+            if result is not None:
+                self.query_one("#tag-list", TagList).update_craft_tags(result)
+
+        elif worker_name == "_fetch_craft_tag_docs":
+            result = event.worker.result
+            if result is not None:
+                tag, docs = result
+                tag_list = self.query_one("#tag-list", TagList)
+                file_list = self.query_one("#file-list", FileList)
+                # Same staleness rules as folder listings: never overwrite a
+                # source the user has moved on from, or a live search.
+                if (
+                    tag_list.active_source == "craft-tags"
+                    and not file_list.is_search_mode()
+                    and not file_list.is_navigation_mode()
+                ):
+                    file_list.update_craft_docs(docs, f"#{tag}")
 
         elif worker_name == "_load_craft_preview":
             result = event.worker.result
@@ -483,6 +508,10 @@ class LibrarianApp(
             self._refresh_craft_docs()
             return
 
+        if tag_list.active_source == "craft-tags":
+            self._refresh_craft_tag_docs()
+            return
+
         selected_tag = tag_list.get_selected_tag()
         if selected_tag:
             files = get_files_by_tag(selected_tag)
@@ -576,6 +605,8 @@ class LibrarianApp(
             )
             return
         tag_list.active_source = "tags"
+        # #taskpaper is a local-index tag; the panel may be Craft-scoped.
+        tag_list.set_tags_scope("local")
 
         for i, item in enumerate(all_list.children):
             if isinstance(item, TagItem) and item.tag_name.lower() == "taskpaper":

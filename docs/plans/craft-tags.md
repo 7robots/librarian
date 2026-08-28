@@ -1,6 +1,6 @@
 # Craft tags: a source-scoped Tags panel
 
-Status: **in progress 2026-08-28** — phase 8 started
+Status: **phases 8–9 complete 2026-08-28** — phase 10 (acceptance gate) remains
 
 The Tags panel follows the active browsing source: local index tags while browsing Folders, Craft
 tags while browsing the Craft tree. Selecting a Craft tag lists its documents in the Files panel.
@@ -37,19 +37,29 @@ browser", which this plan implements).
 ## Phases
 
 ### Phase 8 — client: tag discovery, per-tag docs, titles, links
-- [ ] `search_tags()` — discovery + extraction + counts, TTL-cached
-- [ ] `search_documents_by_tag(tag)` — deduped docs with resolved titles and template links
-- [ ] `fetch_document_title(doc_id)` and `app_url_for(block_id)` (from `/connection`), cached
-- Verify: `uv run pytest tests/test_craft_tags.py -q`
-- Status: in progress
+- [x] `search_tags()` — discovery + extraction + counts, TTL-cached. Extraction reads the search
+      *snippets* with bold match-markers stripped — `fetchBlocks` returns the enclosing page block
+      (the title) for most matches, so snippets are the only faithful source. Live check: discovery
+      counts equal per-tag query counts exactly (66/9/1)
+- [x] `search_documents_by_tag(tag)` — deduped, newest-first; docs known from cached folder
+      listings come free with their real `clickableLink`, the rest resolve titles on a two-worker
+      pool with template links. A full folder walk was rejected (116 folders, ~75s live); six
+      workers tripped the rate limit, hence `_request`'s one retry on 5xx/429 honoring Retry-After
+- [x] `fetch_document_title(doc_id)` and `app_url_for(block_id)` (from `/connection`), cached
+- Verify: `uv run pytest tests/test_craft_tags.py -q` — 13 client tests + live checks
+- Status: **complete 2026-08-28**
 
 ### Phase 9 — UI: the scoped panel and craft-tag browsing
-- [ ] `tags_scope` switches with tree highlights; header flips ALL TAGS / CRAFT TAGS; each scope's
-      list is kept and restored without refetching
-- [ ] Selecting a Craft tag lists its docs (`FILES (craft: #tag)`); preview, `e`, and `a` (prepend)
-      work from a tag listing; `active_source = "craft-tags"` survives index updates and search exit
-- Verify: `uv run pytest tests/test_craft_tags.py tests/test_craft_panel.py -q`
-- Status: not started
+- [x] `tags_scope` switches with tree highlights; header flips ALL TAGS / CRAFT TAGS; each scope's
+      list is kept and restored without refetching (a background rescan while Craft-scoped stores
+      the new local tags rather than painting them)
+- [x] Selecting a Craft tag lists its docs (`FILES (craft: #tag)`, with a loading notify — a cold
+      busy tag takes ~10–30s); preview, `e`, and `a` (prepend) work from a tag listing;
+      `active_source = "craft-tags"` survives index updates and search exit; `t` forces the scope
+      back to local before hunting for #taskpaper
+- Verify: `uv run pytest tests/test_craft_tags.py tests/test_craft_panel.py -q` — 20 + 15 passed;
+  full suite 577
+- Status: **complete 2026-08-28**
 
 ### Phase 10 — acceptance gate
 Run once, at the end, against the real space:
