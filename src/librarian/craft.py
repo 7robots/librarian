@@ -36,6 +36,18 @@ REQUEST_TIMEOUT_SECONDS = 15
 # so every request identifies as librarian.
 USER_AGENT = "librarian"
 
+# A line consisting only of hashtags (e.g. "#meetings" or "#meetings #q3"),
+# using the same tag syntax the scanner indexes. Meeting notes keep such a
+# line directly beneath the title; a prepended occurrence goes below it.
+TAG_LINE_PATTERN = re.compile(
+    r"#[a-zA-Z][a-zA-Z0-9_-]*(?:\s+#[a-zA-Z][a-zA-Z0-9_-]*)*"
+)
+
+
+def is_tag_line(text: str) -> bool:
+    """Whether a block's markdown is a tag-only line."""
+    return bool(TAG_LINE_PATTERN.fullmatch(text.strip()))
+
 
 class CraftError(Exception):
     """Raised when the Craft API cannot be reached or answers with an error."""
@@ -139,8 +151,14 @@ class CraftClient:
 
     # -- transport ---------------------------------------------------------
 
-    def _request(self, path: str, accept: str = "application/json") -> str:
-        """GET `path` and return the response body, or raise CraftError."""
+    def _request(
+        self,
+        path: str,
+        accept: str = "application/json",
+        method: str = "GET",
+        body: dict | None = None,
+    ) -> str:
+        """Call `path` and return the response body, or raise CraftError."""
         if not self._api_url:
             raise CraftError(
                 "No Craft connection URL configured. "
@@ -149,13 +167,21 @@ class CraftClient:
         if self._api_key is None:
             self._api_key = resolve_api_key(self._api_key_ref)
 
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Accept": accept,
+            "User-Agent": USER_AGENT,
+        }
+        data = None
+        if body is not None:
+            data = json.dumps(body).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+
         request = urllib.request.Request(
             f"{self._api_url}{path}",
-            headers={
-                "Authorization": f"Bearer {self._api_key}",
-                "Accept": accept,
-                "User-Agent": USER_AGENT,
-            },
+            headers=headers,
+            data=data,
+            method=method,
         )
         try:
             with urllib.request.urlopen(
@@ -223,6 +249,49 @@ class CraftClient:
         query = urllib.parse.urlencode({"id": doc_id})
         body = self._request(f"/blocks?{query}", accept="text/markdown")
         return unwrap_page_markdown(body)
+
+    def list_child_blocks(self, doc_id: str) -> list[tuple[str, str]]:
+        """The document's direct child blocks as (id, markdown) pairs.
+
+        Never cached: this is read immediately before a write, where a stale
+        first-block id would anchor the insert on a block that may be gone.
+        """
+        query = urllib.parse.urlencode({"id": doc_id, "maxDepth": "1"})
+        data = self._get_json(f"/blocks?{query}")
+        return [
+            (str(raw.get("id", "")), str(raw.get("markdown", "")))
+            for raw in data.get("content", [])
+        ]
+
+    def prepend_markdown(self, doc_id: str, markdown: str) -> None:
+        """Insert markdown at the top of a document's body.
+
+        When the first body block is a tag-only line (a `#tag` beneath the
+        title, as meeting notes keep), the insert is anchored *after* it;
+        otherwise it goes at `position: "start"`. Both placements and the
+        preservation of multi-block order were verified against the live API
+        (2026-08-28).
+
+        The target is required: the API silently routes an insert with no
+        `pageId` into today's daily note, so a missing id must fail loudly
+        here rather than write somewhere surprising.
+        """
+        if not doc_id:
+            raise CraftError("prepend needs a document id -- refusing to send")
+
+        children = self.list_child_blocks(doc_id)
+        if children and children[0][0] and is_tag_line(children[0][1]):
+            position = {"position": "after", "siblingId": children[0][0]}
+        else:
+            position = {"position": "start", "pageId": doc_id}
+
+        self._request(
+            "/blocks",
+            method="POST",
+            body={"markdown": markdown, "position": position},
+        )
+        # The document changed; its cached preview is now stale.
+        self._cache.pop(f"md:{doc_id}", None)
 
 
 def _http_error_detail(error: urllib.error.HTTPError) -> str:

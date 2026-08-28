@@ -9,7 +9,13 @@ displayed as an empty space.
 
 from __future__ import annotations
 
+import shutil
 import subprocess
+import tempfile
+from datetime import date
+from pathlib import Path
+
+from textual.css.query import NoMatches
 
 from ..craft import CraftClient, CraftDoc, CraftFolder
 from ..widgets import FileList, TagList
@@ -121,6 +127,77 @@ class CraftActionsMixin:
             self._open_in_craft(doc)
             return
         await super().action_edit()
+
+    # -- prepend flow ---------------------------------------------------------
+    #
+    # `a` on a Craft document: compose a new occurrence in the editor, then
+    # insert it at the top of the note (below a leading tag line, when the note
+    # has one). Prepend-only, deliberately: whole-document replace would mint
+    # new block ids for every block, breaking deeplinks and comments.
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        """`a` means add-occurrence only while a Craft document is selected.
+
+        Disabled means Textual keeps looking, so the key falls through to the
+        calendar's associate binding the rest of the time -- the same
+        mechanism the vim prefix uses.
+        """
+        if action == "craft_add_occurrence":
+            if not self.config.tools.is_enabled("craft"):
+                return False
+            try:
+                file_list = self.query_one("#file-list", FileList)
+            except NoMatches:
+                return False
+            return file_list.get_selected_craft_doc() is not None
+        return super().check_action(action, parameters)
+
+    def action_craft_add_occurrence(self) -> None:
+        """Compose a new occurrence in the editor and prepend it to the note."""
+        file_list = self.query_one("#file-list", FileList)
+        doc = file_list.get_selected_craft_doc()
+        if doc is None:
+            return
+
+        editor = self.config.editor
+        editor_path = Path(editor)
+        if not (
+            editor_path.is_absolute() and editor_path.exists()
+        ) and not shutil.which(editor):
+            self.notify(f"Editor '{editor}' not found on PATH", severity="error")
+            return
+
+        template = f"## {date.today().isoformat()}\n\n"
+        fd, tmp_name = tempfile.mkstemp(suffix=".md", prefix="craft-occurrence-")
+        tmp = Path(tmp_name)
+        try:
+            with open(fd, "w", encoding="utf-8") as f:
+                f.write(template)
+
+            with self.suspend():
+                subprocess.run([editor, str(tmp)], check=False)
+
+            content = tmp.read_text(encoding="utf-8")
+        except OSError as e:
+            self.notify(f"Could not compose occurrence: {e}", severity="error")
+            return
+        finally:
+            tmp.unlink(missing_ok=True)
+
+        # An untouched or emptied buffer means the user changed their mind;
+        # nothing is sent.
+        if not content.strip() or content.strip() == template.strip():
+            self.notify("Nothing added -- occurrence left empty")
+            return
+
+        self.run_worker(
+            lambda: (doc, self._craft.prepend_markdown(doc.id, content)),
+            name="_craft_prepend",
+            thread=True,
+            group="craft-prepend",
+            exclusive=True,
+            exit_on_error=False,
+        )
 
     def _open_in_craft(self, doc: CraftDoc) -> None:
         """Open a document in Craft.app via its clickable link.

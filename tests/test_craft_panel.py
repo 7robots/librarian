@@ -126,11 +126,16 @@ def craft_labels(app) -> list[str]:
 
 
 async def highlight_meetings(app, pilot) -> None:
-    """Put the Craft tree cursor on the 'meetings' folder and let docs load."""
+    """Put the Craft tree cursor on the 'meetings' folder and let docs load.
+
+    The cursor moves by key, as a user's would: assigning `cursor_line` before
+    the tree's first layout finds no node at that line and emits no highlight.
+    """
     await wait_until(pilot, lambda: craft_labels(app) == ["meetings (1)"])
     tree = app.query_one(TagList).craft_tree
     tree.focus()
-    tree.cursor_line = 0
+    await pilot.pause()
+    await pilot.press("down")
     await wait_until(
         pilot,
         lambda: app.query_one(FileList).get_selected_craft_doc() == DOC,

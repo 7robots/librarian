@@ -809,12 +809,34 @@ covers the embed and skips via `importorskip`. The latter uses a local copy of p
 rather than importing it, so a change in projection's own suite cannot silently alter what is tested
 here.
 
-## Craft (browsing)
+## Craft (browsing + prepend)
 
 `[tools] craft = true` adds a CRAFT panel to the sidebar (between Folders and Tags): a tree of the
 Craft space's folders over the official REST API. Highlighting a folder lists its documents in the
-Files panel (`active_source = "craft"`), highlighting a document previews its markdown, and `e`
-opens it in Craft.app. Full plan: `docs/plans/craft-module.md` (prepend flow is phase 6).
+Files panel (`active_source = "craft"`), highlighting a document previews its markdown, `e` opens
+it in Craft.app, and `a` prepends a new occurrence (composed in the editor) to the selected note.
+Full plan: `docs/plans/craft-module.md`.
+
+### Prepend (`a` on a Craft note)
+Writing is prepend-only, deliberately: whole-document replace would mint new block ids for every
+block, breaking deeplinks and comments. `a` opens the editor on a `## <date>` template; saving
+prepends the buffer to the note; an untouched or emptied buffer sends nothing. Notes keep the
+newest occurrence on top, matching the one-big-note-per-meeting-series style.
+
+- **Placement**: when the note's first body block is a tag-only line (a `#tag` beneath the title),
+  the insert anchors `"after"` that block; otherwise `position: "start"`. Both placements and
+  multi-block order preservation were verified against the live API (2026-08-28).
+- **The daily-note footgun**: the API silently routes an insert with no `pageId` into today's
+  daily note. `prepend_markdown()` refuses to send without a document id.
+- **`a` is two bindings**, disambiguated by `check_action`: add-occurrence is enabled only while a
+  Craft document is selected; disabled means Textual keeps looking, so the key falls through to
+  the calendar's associate binding — the same mechanism the vim prefix uses. The craft binding is
+  listed first so it wins when enabled.
+- `list_child_blocks()` is never cached — it is read immediately before a write, where a stale
+  first-block id would anchor the insert on a block that may be gone. A successful prepend
+  invalidates the doc's cached markdown so the refreshed preview shows the new occurrence.
+- Deletion shape for scratch docs (used by tests/gate, not the app): `DELETE /documents` with
+  `{"documentIds": [...]}`; creation is `POST /documents` with `{"documents": [{"title": ...}]}`.
 
 ```toml
 [tools]
@@ -851,10 +873,13 @@ Things that are deliberate and easy to "fix" back into bugs:
   (rename/delete/move/export) see no selection. `SYSTEM_FOLDER_IDS` (unsorted, daily notes, trash,
   templates) are excluded from the tree. Listings and doc markdown share a 5-minute TTL cache.
 
-Tests: `test_craft.py` (client; canned transport, no network) and `test_craft_panel.py` (UI; a
-`FakeCraft` injected by patching `CraftClient` at the mixin's constructor call site). The panel
-tests poll for visible outcomes via `wait_until` — `workers.wait_for_complete()` hangs/raises once
-the exclusive preview group cancels a superseded worker.
+Tests: `test_craft.py` (client; canned transport, no network), `test_craft_panel.py` (UI; a
+`FakeCraft` injected by patching `CraftClient` at the mixin's constructor call site), and
+`test_craft_prepend.py` (positioning rules + the `a` flow). Two harness traps, both learned here:
+`workers.wait_for_complete()` hangs/raises once the exclusive preview group cancels a superseded
+worker, so the tests poll for visible outcomes via `wait_until`; and assigning `tree.cursor_line`
+before the tree's first layout finds no node at that line and emits no `NodeHighlighted` — move
+the cursor by key (`pilot.press("down")`) as a user would.
 
 ## Export to HTML
 

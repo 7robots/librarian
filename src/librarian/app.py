@@ -109,6 +109,11 @@ class LibrarianApp(
         Binding("d", "delete_file", "Delete"),
         Binding("m", "move_file", "Move"),
         Binding("t", "launch_taskpaper", "TaskPaper", show=False),
+        # Two meanings for `a`, disambiguated by check_action: add-occurrence
+        # is enabled only while a Craft document is selected, and disabled
+        # means Textual keeps looking, falling through to associate. Listed
+        # first so it wins when enabled.
+        Binding("a", "craft_add_occurrence", "Add occurrence", show=False),
         Binding("a", "associate_meeting", "Associate", show=False),
         Binding("x", "export", "Export"),
         Binding("?", "help", "Help"),
@@ -258,6 +263,10 @@ class LibrarianApp(
             elif worker_name in ("_fetch_craft_docs", "_load_craft_preview"):
                 message = str(event.worker.error) or "Craft fetch failed"
                 self.notify(message, severity="error", timeout=8)
+            elif worker_name == "_craft_prepend":
+                # The write failed; the note is untouched. Report verbatim.
+                message = str(event.worker.error) or "Craft prepend failed"
+                self.notify(message, severity="error", timeout=8)
             elif worker_name == "_fetch_calendar":
                 # Show why in the panel, so a broken icalPal is never mistaken
                 # for a day with no meetings.
@@ -323,6 +332,15 @@ class LibrarianApp(
                     return
                 preview = self.query_one("#preview", Preview)
                 self.call_later(preview.show_markdown, doc.title, markdown)
+
+        elif worker_name == "_craft_prepend":
+            result = event.worker.result
+            if result is not None:
+                doc, _ = result
+                self.notify(f"Added to '{doc.title}'")
+                # The client invalidated the doc's cached markdown; refetch so
+                # the preview shows the note with its new occurrence on top.
+                self._do_craft_preview(doc)
 
         elif worker_name == "_load_preview":
             result = event.worker.result

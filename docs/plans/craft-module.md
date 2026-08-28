@@ -1,6 +1,6 @@
 # Craft module
 
-Status: **phase 5 complete 2026-08-28** — phase 6 (prepend) next
+Status: **phase 6 complete 2026-08-28** — review pass, then phase 7 (acceptance gate)
 
 A Craft browsing module mirroring the folder browser: a sidebar panel of Craft folders driving the
 Files and Preview panels, backed by Craft's REST API (`connect.craft.do`), opt-in via
@@ -60,15 +60,18 @@ note opens it in Craft.app via `craftdocs://open?spaceId=&blockId=`.
 ### Phase 6 — v1.5: prepend flow for meeting notes
 Intent: compose a new occurrence in `$EDITOR` (temp `.md`), prepend it to the selected Craft note
 via `POST /blocks`.
-- [ ] One-time smoke test on a scratch doc first: does a multi-block insert at `position: "start"`
-      preserve markdown order? If reversed, anchor with `"before"` + first block id instead
-- [ ] Tag-line rule: when the doc's first body block is a tag-only line (`#tag` beneath the title),
+- [x] Smoke test on a scratch doc: multi-block insert at `position: "start"` **preserves markdown
+      order** (verified live 2026-08-28), so no `"before"` workaround is needed
+- [x] Tag-line rule: when the doc's first body block is a tag-only line (`#tag` beneath the title),
       insert *after* it (`"after"` + `siblingId`); otherwise `position: "start"`
-- [ ] `a` (or similar) on a Craft note: template with date heading, open editor, on save prepend;
-      empty/unchanged buffer aborts without a write
-- [ ] Refresh the preview after a successful prepend; report API errors verbatim
-- Verify: `uv run pytest tests/test_craft_prepend.py -q`
-- Status: not started
+- [x] `a` on a Craft note: `## <date>` template, editor via suspend, on save prepend;
+      empty/unchanged buffer aborts without a write. The key falls through to the calendar's
+      associate binding whenever no Craft doc is selected (`check_action`)
+- [x] Preview refreshes after a successful prepend (client invalidates the doc's markdown cache);
+      API errors notified verbatim
+- Verify: `uv run pytest tests/test_craft_prepend.py -q` — 18 passed 2026-08-28, plus a live
+  end-to-end prepend on a scratch doc with a tag line (placement and order confirmed, then deleted)
+- Status: **complete 2026-08-28**
 
 ### Phase 7 — acceptance gate
 Run once, at the end, against the real space:
