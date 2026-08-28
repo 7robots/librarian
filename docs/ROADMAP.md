@@ -42,6 +42,20 @@ ideas before committing to a direction.
    Least visual noise, but reverses the "both visible, neither hides the other" decision hardest,
    and Textual tab widgets carry their own focus/keybinding quirks. Held in reserve.
 
+### Craft folder icons
+Craft assigns icons to folders, but the REST API does not expose them — `GET /folders` returns
+only `id`, `name`, `documentCount`, and children (docs and live response both confirm,
+2026-08-28). The data exists server-side: Craft's MCP v2 (release 3.4.4) added folder icon/color
+management, MCP-only so far; and unlike Obsidian's Notebook Navigator there is no readable local
+file to mirror (Craft's store is a binary Realm database).
+
+Buildable now as a **manual config layer**: a `[craft-folders.icons]`/`colors` table keyed by
+Craft folder path, feeding a `render_label` on `CraftTree` like `MarkdownDirectoryTree`'s. The
+glyph machinery (`icons.py`, Lucide names, nerd/emoji styles, `pad_glyph`) is source-agnostic and
+needs no changes. Hand-maintained by design — Craft-side icon changes don't propagate. Structure
+the appearance source so an automatic one can slot in if the REST API ever gains the fields
+(plausible, given MCP parity).
+
 ### Links inside Craft previews
 From the craft-tags acceptance gate (2026-08-28): links in a previewed Craft document don't work.
 Two kinds need handling in `Preview`'s link-click path (which today intercepts only `wikilink:`
