@@ -24,6 +24,24 @@ Two things worth keeping on this side:
   which survives `./install.sh` — that syncs `--inexact` — but a bare `uv sync` is exact and would
   replace it with the published package.
 
+### Sidebar layout rework — direction not yet chosen
+With everything enabled the sidebar stacks four panels (Folders, Craft, Tags, Tools), each with
+its own border color, and Folders shares green with Preview. Jefferson finds it busy, jumbled, and
+inconsistent (2026-08-28); options documented for a later decision, and he is bringing his own
+ideas before committing to a direction.
+
+1. **Visual normalization** — keep the layout; one neutral border for inactive panels, a single
+   accent for the focused panel, consistent headers (drop the ★, one header color). Mostly CSS.
+   Fixes inconsistency, not density.
+2. **Unified browser tree** — merge Folders and Craft into one BROWSE panel: a single tree with
+   `Local` and `Craft` top-level sections. Sidebar returns to three panels; the cursor position in
+   one tree defines `active_source` and the tags scope, with no second tree to arbitrate. Scales
+   to future sources as new sections. Touches active_source, focus order, vim keys, and startup —
+   needs a spec'd plan and a mockup sign-off.
+3. **Tabbed sources** — fold the browsers into a `TabbedContent`, one source visible at a time.
+   Least visual noise, but reverses the "both visible, neither hides the other" decision hardest,
+   and Textual tab widgets carry their own focus/keybinding quirks. Held in reserve.
+
 ### Links inside Craft previews
 From the craft-tags acceptance gate (2026-08-28): links in a previewed Craft document don't work.
 Two kinds need handling in `Preview`'s link-click path (which today intercepts only `wikilink:`
