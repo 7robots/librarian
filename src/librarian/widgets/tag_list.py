@@ -7,6 +7,7 @@ from rich.style import Style
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Vertical
+from textual.css.query import NoMatches
 from textual.message import Message
 from textual.widgets import DirectoryTree, Label, ListItem, ListView, Static, Tree
 from textual.widgets._directory_tree import DirEntry
@@ -292,29 +293,34 @@ class TagList(Vertical):
         scan_directory: Path | None = None,
         appearance: FolderAppearance | None = None,
         tools: tuple[str, ...] | None = None,
+        show_folders: bool = True,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
         self.tools = tuple(tools) if tools is not None else DEFAULT_TOOLS
+        self.show_folders = show_folders
         self._all_tags: list[tuple[str, int]] = []
         self._scan_directory = scan_directory or Path.home()
         self._appearance = appearance
         # Which panel drives the Files list: "folders" or "tags". Both are
-        # always visible, so the last one touched wins.
-        self.active_source: str = DEFAULT_SOURCE
+        # always visible, so the last one touched wins. With the folder browser
+        # off there is only one candidate.
+        self.active_source: str = DEFAULT_SOURCE if show_folders else "tags"
         self._tags_show_all: bool = False
 
     def compose(self) -> ComposeResult:
         # Three permanent panels. Folders and Tags are both visible because they
         # do different jobs -- the tree is for browsing, a tag like #meetings is
         # a shortcut list -- and switching between them lost sight of the other.
-        with Vertical(id="folders-panel"):
-            yield Static("FOLDERS", classes="tag-header", id="folders-header")
-            yield MarkdownDirectoryTree(
-                str(self._scan_directory),
-                appearance=self._appearance,
-                id="directory-tree",
-            )
+        # The folder browser is the one optional panel ([tools] folders).
+        if self.show_folders:
+            with Vertical(id="folders-panel"):
+                yield Static("FOLDERS", classes="tag-header", id="folders-header")
+                yield MarkdownDirectoryTree(
+                    str(self._scan_directory),
+                    appearance=self._appearance,
+                    id="directory-tree",
+                )
         with Vertical(id="tags-panel"):
             yield Static("ALL TAGS", classes="tag-header", id="all-tags-header")
             yield ListView(id="all-tags-list-view")
@@ -334,8 +340,12 @@ class TagList(Vertical):
         return self.query_one("#all-tags-list-view", ListView)
 
     @property
-    def directory_tree(self) -> MarkdownDirectoryTree:
-        return self.query_one("#directory-tree", MarkdownDirectoryTree)
+    def directory_tree(self) -> MarkdownDirectoryTree | None:
+        """The folder tree, or None when the folder browser is turned off."""
+        try:
+            return self.query_one("#directory-tree", MarkdownDirectoryTree)
+        except NoMatches:
+            return None
 
     def set_scan_directory(
         self, path: Path, appearance: FolderAppearance | None = None
@@ -351,8 +361,9 @@ class TagList(Vertical):
             self._appearance = appearance
         try:
             tree = self.directory_tree
-            tree.appearance = self._appearance
-            tree.path = path
+            if tree is not None:
+                tree.appearance = self._appearance
+                tree.path = path
         except Exception:
             pass  # Tree not yet mounted
 
@@ -413,9 +424,18 @@ class TagList(Vertical):
     def initialize(self) -> None:
         """Focus the folder tree and announce its starting folder.
 
-        Called once at startup. Folders leads, so browsing begins there.
+        Called once at startup. Folders leads, so browsing begins there --
+        unless the folder browser is off, in which case the tags list leads and
+        the highlighted tag (if any) drives the Files panel.
         """
         tree = self.directory_tree
+        if tree is None:
+            self.all_tags_list_view.focus()
+            tag = self.get_selected_tag()
+            if tag is not None:
+                self.post_message(self.TagSelected(tag))
+            return
+
         if tree.cursor_line < 0:
             tree.cursor_line = 0
         tree.focus()
@@ -477,6 +497,8 @@ class TagList(Vertical):
             tree = self.directory_tree
         except Exception:
             return None  # Tree not yet mounted
+        if tree is None:
+            return None  # Folder browser turned off
 
         node = tree.cursor_node
         folder = self._folder_for_node(node) if node is not None else None

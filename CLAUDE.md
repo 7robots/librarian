@@ -306,6 +306,7 @@ class KeysConfig:
 class Config:
 @dataclass
 class ToolsConfig:
+    folders: bool = True      # show the Folders panel (needs nothing, so on by default)
     taskpaper: bool = False   # show the TaskPaper tool (needs taskpapertui)
     reminders: bool = False   # show the Reminders tool (needs remtui)
     calendar: bool = False    # show the Calendar tool (needs calctl or icalPal)
@@ -653,6 +654,13 @@ projects = false    # Smartsheet projects, via projection
 
 All default to false, so a fresh install shows only Tags and Folders and never advertises a tool
 whose backing program is missing. Which task tool to use — if any — is the user's choice.
+
+One switch in `[tools]` is different in kind: `folders = true` controls the Folders *panel*, not a
+Tools menu entry. It needs no third-party program, so it alone defaults on. Turning it off removes
+the panel entirely — `TagList` composes without it, `directory_tree` returns `None`, `active_source`
+starts as `"tags"`, startup focuses the tags list and publishes the highlighted tag's files, and the
+Tab/vim focus machinery skips the missing tree the same way it skips an empty Tools panel. Indexing
+and the file watcher are untouched, consistent with hiding being UI-only.
 
 The calendar switch used to be `[calendar] enabled`. That key is still honored when `[tools] calendar`
 is absent, so older configs keep working; `[tools]` wins when both are present. `[calendar]` keeps its

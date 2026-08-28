@@ -45,12 +45,15 @@ class NavigationActionsMixin:
         preview = self.query_one("#preview", Preview)
 
         focus_map = {
-            id(tag_list.directory_tree): 0,
             id(tag_list.all_tags_list_view): 1,
             id(tag_list.tools_list_view): 2,
             id(file_list.list_view): 3,
             id(preview.scroll_view): 4,
         }
+        # The folder browser is optional, so the tree may not exist at all.
+        tree = tag_list.directory_tree
+        if tree is not None:
+            focus_map[id(tree)] = 0
         return focus_map.get(id(focused), -1)
 
     def action_focus_next(self) -> None:
@@ -344,10 +347,11 @@ class NavigationActionsMixin:
 
         # Back to whichever panel drives the Files list.
         tag_list = self.query_one("#tag-list", TagList)
-        if tag_list.active_source == "tags":
+        tree = tag_list.directory_tree
+        if tag_list.active_source == "tags" or tree is None:
             tag_list.all_tags_list_view.focus()
         else:
-            tag_list.directory_tree.focus()
+            tree.focus()
 
     def action_help(self) -> None:
         """Show help information."""

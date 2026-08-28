@@ -188,6 +188,7 @@ class LibrarianApp(
                 scan_directory=self.config.scan_directory,
                 appearance=build_folder_appearance(self.config),
                 tools=self.visible_tools(),
+                show_folders=self.config.tools.is_enabled("folders"),
                 id="tag-list",
                 classes="panel",
             )

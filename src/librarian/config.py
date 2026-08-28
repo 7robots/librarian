@@ -29,6 +29,7 @@ _CONFIG_KEYS: tuple[tuple[str | None, str, str, str], ...] = (
     ),
     (None, "export_directory", None, "Directory for exported files (PDF/HTML)"),
     (None, "data_directory", None, "Directory for index data (index.json)"),
+    ("tools", "folders", "true", "the folder browser panel; needs nothing, on by default"),
     ("tools", "taskpaper", "false", "file-based tasks, via taskpapertui"),
     ("tools", "reminders", "false", "Apple Reminders, via remtui"),
     ("tools", "calendar", "false", "today's meetings, via icalPal"),
@@ -187,8 +188,14 @@ class ToolsConfig:
     default and turned on deliberately. Hiding a tool only removes its UI entry points; the
     code stays in place, so `.taskpaper` files keep being indexed, previewed,
     exported, and edited either way.
+
+    `folders` is the exception: it is the folder browser *panel*, not a Tools
+    menu entry, and it needs no third-party program -- so it alone defaults on.
+    Turning it off removes the panel and starts browsing at the tags list;
+    indexing and the file watcher are untouched.
     """
 
+    folders: bool = True
     taskpaper: bool = False
     reminders: bool = False
     calendar: bool = False
@@ -356,6 +363,7 @@ class Config:
         # working.
         tools_data = data.get("tools", {})
         tools = ToolsConfig(
+            folders=bool(tools_data.get("folders", True)),
             taskpaper=bool(tools_data.get("taskpaper", False)),
             reminders=bool(tools_data.get("reminders", False)),
             calendar=bool(
@@ -455,7 +463,10 @@ class Config:
             '# Optional tools shown in the Tools menu. Each needs a third-party',
             '# program (taskpapertui, remtui, icalPal, projection), so all are opt-in.',
             '# Hiding one only hides its UI: .taskpaper files stay indexed.',
+            '# folders is the folder browser panel; it needs nothing, so it is on',
+            '# by default. Off removes the panel and starts browsing at the tags list.',
             '[tools]',
+            f'folders = {str(self.tools.folders).lower()}',
             f'taskpaper = {str(self.tools.taskpaper).lower()}',
             f'reminders = {str(self.tools.reminders).lower()}',
             f'calendar = {str(self.tools.calendar).lower()}',
