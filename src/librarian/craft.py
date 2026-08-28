@@ -17,6 +17,7 @@ import subprocess
 import textwrap
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -43,6 +44,15 @@ USER_AGENT = "librarian"
 TAG_LINE_PATTERN = re.compile(
     r"#[a-zA-Z][a-zA-Z0-9_-]*(?:\s+#[a-zA-Z][a-zA-Z0-9_-]*)*"
 )
+
+# The RE2 pattern sent to /documents/search for tag discovery: the scanner's
+# tag rules, with the same whitespace-or-start requirement that keeps URL
+# fragments from reading as tags.
+TAG_SEARCH_REGEXP = r"(^|\s)#[a-zA-Z][a-zA-Z0-9_-]*"
+
+# Client-side extraction from matched blocks' raw markdown -- the same rule as
+# scanner.TAG_PATTERN, so the local and Craft tag panels agree on what a tag is.
+TAG_EXTRACT_PATTERN = re.compile(r"(?<![^\s])#([a-zA-Z][a-zA-Z0-9_-]*)")
 
 
 def is_tag_line(text: str) -> bool:
@@ -194,17 +204,24 @@ class CraftClient:
             data=data,
             method=method,
         )
-        try:
-            with urllib.request.urlopen(
-                request, timeout=REQUEST_TIMEOUT_SECONDS
-            ) as response:
-                return response.read().decode("utf-8")
-        except urllib.error.HTTPError as e:
-            raise CraftError(f"Craft API: {_http_error_detail(e)}") from None
-        except urllib.error.URLError as e:
-            raise CraftError(f"Craft API unreachable: {e.reason}") from None
-        except TimeoutError:
-            raise CraftError("Craft API timed out") from None
+        # One retry on a server-side error or throttle: a burst of quick GETs
+        # (folder walks, title lookups) can catch a transient 502 or a 429,
+        # and a single one must not fail the lot.
+        for attempt in (1, 2):
+            try:
+                with urllib.request.urlopen(
+                    request, timeout=REQUEST_TIMEOUT_SECONDS
+                ) as response:
+                    return response.read().decode("utf-8")
+            except urllib.error.HTTPError as e:
+                if (e.code >= 500 or e.code == 429) and attempt == 1:
+                    time.sleep(_retry_delay(e))
+                    continue
+                raise CraftError(f"Craft API: {_http_error_detail(e)}") from None
+            except urllib.error.URLError as e:
+                raise CraftError(f"Craft API unreachable: {e.reason}") from None
+            except TimeoutError:
+                raise CraftError("Craft API timed out") from None
 
     def _get_json(self, path: str) -> dict:
         body = self._request(path)
@@ -263,6 +280,130 @@ class CraftClient:
         body = self._request(f"/blocks?{query}", accept="text/markdown")
         return unwrap_page_markdown(body)
 
+    def search_tags(self) -> list[tuple[str, int]]:
+        """Every tag in the space with its document count.
+
+        One space-wide regex search; tags are extracted from the result
+        snippets, which bold each *matched region* as `**...**` and elide
+        unmatched context as `...` -- so the tags themselves are always
+        present in full, once the bold markers are stripped. `fetchBlocks`
+        is no help here: for most matches it returns the enclosing *page*
+        block, whose text is the document title, not the tag line (verified
+        live 2026-08-28: 68 of 83 matches). Semantics mirror the scanner:
+        case-insensitive dedupe keeping the first-seen casing, sorted by
+        count descending then name.
+        """
+        return self._cached("tags", self._load_tags)
+
+    def _load_tags(self) -> list[tuple[str, int]]:
+        query = urllib.parse.urlencode({"regexps": TAG_SEARCH_REGEXP})
+        data = self._get_json(f"/documents/search?{query}")
+
+        docs_by_tag: dict[str, set[str]] = {}
+        casing: dict[str, str] = {}
+        for item in data.get("items") or []:
+            doc_id = str(item.get("documentId") or "")
+            snippet = str(item.get("markdown") or "").replace("**", "")
+            for tag in TAG_EXTRACT_PATTERN.findall(snippet):
+                key = tag.lower()
+                casing.setdefault(key, tag)
+                docs_by_tag.setdefault(key, set()).add(doc_id)
+
+        counts = [(casing[key], len(ids)) for key, ids in docs_by_tag.items()]
+        counts.sort(key=lambda item: (-item[1], item[0].lower()))
+        return counts
+
+    def search_documents_by_tag(self, tag: str) -> list[CraftDoc]:
+        """The documents carrying a tag, newest-modified first.
+
+        Search results carry neither title nor clickable link, so titles are
+        resolved per document and links built from the connection's URL
+        template.
+        """
+        return self._cached(
+            f"tagdocs:{tag.lower()}", lambda: self._load_tag_docs(tag)
+        )
+
+    def _load_tag_docs(self, tag: str) -> list[CraftDoc]:
+        query = urllib.parse.urlencode(
+            {"regexps": rf"(^|\s)#{re.escape(tag)}\b"}
+        )
+        data = self._get_json(f"/documents/search?{query}")
+
+        entries: list[tuple[str, str]] = []  # (doc_id, lastModifiedAt)
+        seen: set[str] = set()
+        for item in data.get("items") or []:
+            doc_id = str(item.get("documentId") or "")
+            if not doc_id or doc_id in seen:
+                continue
+            seen.add(doc_id)
+            entries.append((doc_id, str(item.get("lastModifiedAt") or "")))
+
+        # Search results carry neither title nor link. Docs already known
+        # from cached folder listings (browsing warms these) come free; the
+        # rest resolve one title GET each on a *small* pool -- 6 workers
+        # tripped the API's rate limit at 66 docs, and a full folder walk was
+        # worse (116 folders, ~75s). One unresolvable title must not fail the
+        # listing.
+        known = self._docs_from_cached_listings()
+
+        def resolve(entry: tuple[str, str]) -> CraftDoc:
+            doc_id, modified = entry
+            hit = known.get(doc_id)
+            if hit is not None:
+                return hit
+            try:
+                title = self.fetch_document_title(doc_id)
+            except CraftError:
+                title = "(untitled)"
+            return CraftDoc(
+                id=doc_id,
+                title=title,
+                clickable_link=self.app_url_for(doc_id),
+                last_modified=modified,
+            )
+
+        # Prime the URL template once, outside the pool.
+        self.app_url_for("")
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            return list(pool.map(resolve, entries))
+
+    def _docs_from_cached_listings(self) -> dict[str, CraftDoc]:
+        """Docs known from folder listings already in the cache. No network."""
+        now = time.monotonic()
+        known: dict[str, CraftDoc] = {}
+        for key, (stamp, value) in list(self._cache.items()):
+            if key.startswith("docs:") and now - stamp < CACHE_TTL_SECONDS:
+                for doc in value:
+                    known[doc.id] = doc
+        return known
+
+    def fetch_document_title(self, doc_id: str) -> str:
+        """A document's title: the root page block's markdown."""
+        return self._cached(f"title:{doc_id}", lambda: self._load_title(doc_id))
+
+    def _load_title(self, doc_id: str) -> str:
+        query = urllib.parse.urlencode({"id": doc_id, "maxDepth": "0"})
+        data = self._get_json(f"/blocks?{query}")
+        return str(data.get("markdown") or "") or "(untitled)"
+
+    def app_url_for(self, block_id: str) -> str:
+        """A craftdocs:// link for a block id, from the connection's template.
+
+        Listings' own `clickableLink` uses a different `documentId`; search
+        results carry no link at all, so this template (which takes the root
+        *block* id -- the API's document id) is what a tag listing gets.
+        """
+        template = self._cached("app-url-template", self._load_url_template)
+        if not template or "{blockId}" not in template:
+            return ""
+        return template.replace("{blockId}", block_id)
+
+    def _load_url_template(self) -> str:
+        data = self._get_json("/connection")
+        templates = data.get("urlTemplates") or {}
+        return str(templates.get("app") or "")
+
     def list_child_blocks(self, doc_id: str) -> list[tuple[str, str]]:
         """The document's direct child blocks as (id, markdown) pairs.
 
@@ -309,6 +450,15 @@ class CraftClient:
         )
         # The document changed; its cached preview is now stale.
         self._cache.pop(f"md:{doc_id}", None)
+
+
+def _retry_delay(error: urllib.error.HTTPError) -> float:
+    """Seconds to wait before the one retry, honoring Retry-After if sane."""
+    retry_after = error.headers.get("Retry-After") if error.headers else None
+    try:
+        return min(max(float(retry_after), 0.5), 10.0)
+    except (TypeError, ValueError):
+        return 1.0
 
 
 def _http_error_detail(error: urllib.error.HTTPError) -> str:
