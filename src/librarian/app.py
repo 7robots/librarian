@@ -405,10 +405,26 @@ class LibrarianApp(
         self._preview_full_timer = self.set_timer(PREVIEW_SETTLE, fill_in)
 
     def on_app_focus(self) -> None:
-        """Handle app regaining focus — invalidate calendar cache."""
+        """Handle app regaining focus — refresh what may have changed elsewhere.
+
+        Coming back to Librarian is exactly when an edit made in Craft.app (or
+        Calendar) should become visible: drop the caches and refetch the
+        selected Craft doc's preview. The doc *listing* is left in place — a
+        relist would reset the cursor to the first doc.
+        """
         clear_calendar_cache()
         if self._calendar_list() is not None:
             self._fetch_calendar_events()
+
+        if self._craft is not None:
+            self._craft.clear_cache()
+            try:
+                file_list = self.query_one("#file-list", FileList)
+            except NoMatches:
+                return
+            selected = file_list.get_selected_craft_doc()
+            if selected is not None:
+                self._do_craft_preview(selected)
 
     async def on_unmount(self) -> None:
         """Clean up when app closes."""

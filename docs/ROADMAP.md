@@ -24,6 +24,17 @@ Two things worth keeping on this side:
   which survives `./install.sh` — that syncs `--inexact` — but a bare `uv sync` is exact and would
   replace it with the published package.
 
+### Tags panel scope with Craft enabled
+From the Craft-module acceptance gate (2026-08-28), three linked observations, **awaiting a
+ruling**: (a) turning `[tools] folders` off leaves the Tags panel browsing the same local vault;
+(b) with Craft on, a "Craft tags" browser would be natural; (c) with both on, which source the
+Tags panel serves needs deciding. Recommendation: add a `[tools] tags` switch (default on, same
+pattern as `folders`) so local-vault browsing can be hidden entirely — the panels are independent
+views, so coupling tags to folders would surprise; and treat Craft tags as its own feature, since
+the API has no list-tags endpoint — it would need `/blocks/search` over hashtags or per-doc
+scanning, with unknown cost. A source-scoped Tags panel (shows the active source's tags) beats a
+fixed priority order if Craft tags ever exist.
+
 ### Create a new Craft note from Librarian
 Deferred out of the Craft module plan (`docs/plans/craft-module.md`, phases 5–7): the plan ships
 browsing, preview, open-in-Craft, and the prepend flow for existing meeting notes. Creating a note

@@ -58,7 +58,12 @@ class FakeCraft:
         return [DOC] if folder_id == "F1" else []
 
     def fetch_document_markdown(self, doc_id: str) -> str:
-        return "## Latest occurrence\n\ndiscussed things"
+        return self.markdown
+
+    markdown = "## Latest occurrence\n\ndiscussed things"
+
+    def clear_cache(self) -> None:
+        self.cache_cleared = True
 
 
 class BrokenCraft(FakeCraft):
@@ -250,6 +255,23 @@ class TestBrowsing:
             tag_list.directory_tree.focus()
             await pilot.press("down")
             await wait_until(pilot, lambda: tag_list.active_source == "folders")
+
+    async def test_app_refocus_refreshes_an_externally_edited_doc(self, app):
+        """Editing the note in Craft.app and coming back must show the edit --
+        the cache is dropped and the selected doc refetched on AppFocus."""
+        async with app.run_test(size=(100, 40)) as pilot:
+            await highlight_meetings(app, pilot)
+            preview = app.query_one("#preview")
+            await wait_until(
+                pilot, lambda: "Latest occurrence" in preview.markdown_widget.source
+            )
+
+            app._craft.markdown = "## Edited in Craft"
+            app.on_app_focus()
+            await wait_until(
+                pilot, lambda: "Edited in Craft" in preview.markdown_widget.source
+            )
+            assert app._craft.cache_cleared
 
     async def test_e_opens_the_doc_in_craft(self, app, monkeypatch):
         opened = []

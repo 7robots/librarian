@@ -1,6 +1,6 @@
 # Craft module
 
-Status: **phases 5–6 complete, review pass done 2026-08-28** — phase 7 (acceptance gate) remains
+Status: **complete 2026-08-28** — all phases done, gate passed
 
 Review pass (fresh agent, 2026-08-28): 9 findings, all triaged fix-now and fixed — key-resolution
 lock, deferred first fetch (no `op read` at startup), search-mode guard on the docs handler,
@@ -81,9 +81,12 @@ via `POST /blocks`.
 
 ### Phase 7 — acceptance gate
 Run once, at the end, against the real space:
-- [ ] Launch `uv run librarian` with `[tools] craft = true`; browse folders; preview a real meeting
+- [x] Launch `uv run librarian` with `[tools] craft = true`; browse folders; preview a real meeting
       note; `e` opens it in Craft.app; prepend a dated test occurrence to a scratch meeting note
       with a `#tag` beneath its title and confirm in Craft.app it landed below the tag line with
       block order intact; delete the test occurrence in Craft; disable `[tools] craft` and confirm
       the panel is gone and startup is unchanged
-- Status: not started
+- Status: **passed 2026-08-28**, run by Jefferson against the real space. One defect surfaced and
+  was fixed in-phase: a doc edited in Craft.app kept its stale cached preview until restart — the
+  app now drops the Craft cache and refetches the selected doc on regaining focus. Panel-symmetry
+  observations from the gate went to `docs/ROADMAP.md` ("Tags panel scope with Craft enabled")

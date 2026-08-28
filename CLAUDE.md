@@ -876,6 +876,9 @@ Things that are deliberate and easy to "fix" back into bugs:
 - Craft docs are not files: `FileList.update_craft_docs()` empties `_files`, so the file actions
   (rename/delete/move/export) see no selection. `SYSTEM_FOLDER_IDS` (unsorted, daily notes, trash,
   templates) are excluded from the tree. Listings and doc markdown share a 5-minute TTL cache.
+- **Regaining app focus drops the Craft cache and refetches the selected doc's preview** — coming
+  back to Librarian is exactly when an edit made in Craft.app should become visible. The doc
+  *listing* is deliberately not relisted: that would reset the cursor to the first doc.
 
 Tests: `test_craft.py` (client; canned transport, no network), `test_craft_panel.py` (UI; a
 `FakeCraft` injected by patching `CraftClient` at the mixin's constructor call site), and

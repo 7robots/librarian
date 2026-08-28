@@ -155,6 +155,9 @@ class FakeCraft:
     def prepend_markdown(self, doc_id: str, markdown: str) -> None:
         self.prepends.append((doc_id, markdown))
 
+    def clear_cache(self) -> None:
+        pass
+
 
 class FakeSuspend:
     """Stands in for App.suspend(), recording that it was entered."""
