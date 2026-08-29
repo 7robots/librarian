@@ -56,7 +56,7 @@ ancestry -- display sits on the panel, not the tree); the strip joins the Tab cy
 stop; borders/headers normalized per the mockup (modals keep cyan -- they should stand out).
 Verify: `uv run pytest tests/test_vim_navigation.py tests/test_tool_tabs.py tests/test_folder_view.py -q`
 
-### Phase 14 — docs  ⏳
+### Phase 14 — docs  ✅
 CLAUDE.md UI Layout / Widget Communication / Keyboard Navigation sections rewritten; ROADMAP
 sidebar item closed.
 Verify: docs read true against the code (grep the claims).

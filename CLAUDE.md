@@ -55,13 +55,13 @@ src/librarian/
   and link anchor becomes a tag — that alone accounted for 53 of 55 tags in a real vault. Matches
   Obsidian's rules, so the two tag lists agree
 - **Auto-refresh**: watchdog monitors scan directory with debouncing
-- **Three-panel sidebar**: Folders, All Tags, and Tools are all visible at once — the folder tree is for browsing, while a tag like `#meetings` acts as a shortcut list to frequently used notes, so neither should hide the other. Startup focus is the folder tree; see `DEFAULT_SOURCE` in `widgets/tag_list.py`
+- **Full-width tool tabs**: a `ToolTabs` strip (boxed tabs, active in accent) under the banner carries one tab per enabled tool — Local Folders and Craft Docs are *workspace* tabs that switch what the sidebar and Files panel show; TaskPaper, Reminders, Calendar, Projects are *launcher* tabs that run the tool and snap the strip back to the last workspace tab (see `widgets/tool_tabs.py`, plan `docs/plans/tool-tabs.md`)
 - **Optional tools**: every tool needing a third-party program (TaskPaper, Reminders, Calendar, Projects) is opt-in via `[tools]`. Hiding a tool withholds its UI entry points only — the code stays live, so `.taskpaper` files keep being indexed, previewed, exported, and edited
-- **Tools are launchers, not panels**: with Folders and Tags permanently on screen, every tool either hands off to an external program (TaskPaper) or opens a modal over the two right-hand panels (Reminders, Calendar, Projects) — see `LAUNCHER_TOOLS` in `widgets/tag_list.py`
+- **Tools are launchers, not panels**: every launcher tab either hands off to an external program (TaskPaper selects the #taskpaper tag; `e` on a .taskpaper file suspends into taskpapertui) or opens a modal over the two right-hand panels (Reminders, Calendar, Projects). The modals stay modals deliberately: `ModalScreen`'s key isolation is load-bearing
 - **Wiki links**: `[[note.md]]` or `[[note|display text]]` syntax, preprocessed to `wikilink:` scheme
 - **Export**: HTML export with configurable output directory (sanitized output)
 - **Banner**: Compact 3-row header (`widgets/banner.py`) — a robot mark echoing the `md-robot` folder glyph, a letter-spaced title, and the tagline. `Text(no_wrap=True)` keeps a narrow terminal from making it taller
-- **Border styling**: Each panel has a distinct border color (`$accent`/cyan for tags, `$warning`/yellow for files, `$success`/green for preview) with `:focus-within` pseudo-class for active panel indication
+- **Border styling**: one neutral border (`$panel-lighten-2`) on every panel, with `:focus-within` switching the focused panel to `$accent` — normalized in the tool-tabs rework; the modals keep cyan so they stand out over the panels
 
 ## Index Schema
 
@@ -85,23 +85,24 @@ Denormalized structure with tags inline per file. Only files containing at least
 
 ## UI Layout
 
-The app has five panels — three down the left, two on the right:
-- **Left sidebar** (25% width), all three always visible:
-  - **Folders** (`1fr`): DirectoryTree of the scan directory
-  - **All Tags** (`1fr`): every indexed tag with its file count — equal weight with Folders, since
-    browsing the tree and jumping to a tag are equally common and neither should crowd the other
-  - **Tools** (`height: auto`, capped at 40%): only the tools enabled in `[tools]`, so it takes just
-    the rows its launchers need, collapses to its header when none are enabled — and is skipped in
-    the Tab cycle when empty
+Under the banner, a full-width `ToolTabs` strip (one boxed tab per enabled tool), then four panels:
+- **Left sidebar** (25% width), two panels splitting it 50/50:
+  - **The active workspace's tree** (`1fr`): the local DirectoryTree on the Local Folders tab, the
+    Craft folder tree on Craft Docs. Both are composed when enabled; `TagList.show_workspace()`
+    flips which one displays, so cursor and expansion state survive the switch
+  - **Tags** (`1fr`): the active source's tags — ALL TAGS (local index) or CRAFT TAGS
 - **Right top** (33% height): File list — the selected folder's files in folder view, the selected tag's files otherwise
 - **Right bottom** (67% height): Markdown preview
 
-Layout uses percentage-based CSS for dynamic terminal resizing.
+Launcher tabs (TaskPaper, Reminders, Calendar, Projects) open over these panels and snap the strip
+back; the panels never change hands. Layout uses percentage-based CSS for dynamic terminal
+resizing.
 
 ### Active source
-Folders and Tags are both on screen, so "which one is the Files panel showing?" is state in its own
-right: `TagList.active_source` (`"folders"` or `"tags"`), set by moving the tree cursor or selecting
-a tag. It is not the same idea as the old `active_tool` — tools no longer own the content area.
+"Which source is the Files panel showing?" is state in its own right: `TagList.active_source`
+(`"folders"`, `"tags"`, `"craft"`, or `"craft-tags"`), set by activating a workspace tab, moving a
+tree cursor, or selecting a tag. Launcher tabs never touch it, so the Files panel resumes exactly
+where it was when a modal closes.
 
 ### Folder view
 With `active_source == "folders"`, the Files panel follows the folder tree cursor: moving onto a
@@ -154,16 +155,17 @@ cat \$(uv run python -c "from librarian.config import Config; print(Config.load(
 
 ## Widget Communication
 
-- `TagList` contains three sibling panels: `#folders-panel` (DirectoryTree), `#tags-panel` (All Tags
-  ListView), and `#tools-panel` (Tools ListView)
-  - Tracks `active_source` (`"folders"` or `"tags"`) — which panel the Files panel is following
+- `ToolTabs` (`#tool-tabs`, in `widgets/tool_tabs.py`) is the app-owned strip; the app's
+  `on_tabs_tab_activated` dispatches workspace switches and tool launches, snapping launcher tabs
+  back to `_active_workspace_tab` (the guard that also makes the re-fired activation a no-op)
+- `TagList` contains up to three sibling panels: `#folders-panel` (DirectoryTree), `#craft-panel`
+  (CraftTree) — one of the two displayed at a time via `show_workspace()` — and `#tags-panel`
+  - Tracks `active_source` (`"folders"`, `"tags"`, `"craft"`, `"craft-tags"`) — which source the
+    Files panel is following
   - Emits `TagSelected` when a tag is selected (sets `active_source = "tags"`)
   - Emits `FolderHighlighted` when the folder tree cursor moves to a folder (sets it to `"folders"`)
   - Emits `FileSelected` when a file is selected in folder browser
-  - Emits `ToolLaunched` for every tool — each either runs an external program (TaskPaper) or opens a
-    modal (Reminders, Calendar). Neither touches `active_source`, so the Files panel keeps showing
-    what it was showing when the modal closes
-  - `initialize()` focuses the folder tree and publishes the root folder's files at startup
+  - `initialize()` focuses the first panel present and publishes its starting selection at startup
 - `CalendarModal` (in `calendar_modal.py`) frames `CalendarList` plus **its own** `Preview` over the
   two right-hand panels — it covers the main preview, so it cannot borrow it. `q`/`escape` close it;
   `a`, `n`, and `e` forward to the app's actions
@@ -178,17 +180,18 @@ cat \$(uv run python -c "from librarian.config import Config; print(Config.load(
 
 ## Keyboard Navigation
 
-Tab goes down the left column, then down the right:
-1. Folders (top-left)
-2. All Tags (middle-left)
-3. Tools (bottom-left) — **skipped when no tools are enabled**, since the panel is then empty
+Tab starts at the tool tab strip, then goes down the left column, then down the right:
+1. Tool tabs (the strip; left/right switch tabs while it has focus)
+2. The active workspace's tree (top-left) — the hidden tree is **not** a stop, checked up the
+   ancestry since `display` sits on the enclosing panel
+3. Tags (bottom-left)
 4. Files (top-right)
 5. Preview (bottom-right)
 
 Custom focus order is defined in `LibrarianApp.FOCUS_ORDER`, with `action_focus_next`/
 `action_focus_previous` delegating to `_focus_step()`, which walks past any stop whose lookup
-returns `None`. `PANEL_GRID` holds the same five panels in their on-screen arrangement, for the
-optional vim keys below.
+returns `None`. `PANEL_GRID` holds the content panels (not the strip) in their on-screen
+arrangement, for the optional vim keys below.
 
 Key bindings:
 - `s` - Search files and tags
@@ -261,17 +264,12 @@ modals, whose embedded panels carry their own.
 - Widgets inherit from `Vertical` container (not `Static`)
 - ListViews use `height: 1fr` to fill available space within their sections
 - Headers use fixed `height: 1`
-- TagList: Folders `1fr`, All Tags `1fr`, Tools `height: auto` with `max-height: 40%`. `#tools-list-view`
-  must be `height: auto` too — a `1fr` child inside an `auto` parent grabs the leftover sidebar space,
-  which made a three-item menu render as tall as the folder tree. Auto also lets the panel shrink to
-  its header when no tools are enabled, giving the rows back to Folders and Tags
-- Each sidebar panel carries its own border color: Folders `$success`, All Tags `$primary`,
-  Tools `$accent`
+- TagList: the visible tree `1fr`, Tags `1fr` — a 50/50 split (ruling, 2026-08-28). The inactive
+  workspace's tree is `display: none`, so it takes no rows
+- `ToolTabs`: `height: 3` for the boxed tabs (`border: round`), stock `Underline` hidden
 - Banner widget has fixed `height: 3` with `width: 100%`; `ROBOT_ROWS` must stay 3 rows of equal, single-cell width or the text column shifts between lines
-- Per-panel border colors with `:focus-within` for active indication:
-  - `#tag-list`: `$accent` / `cyan` when focused
-  - `#file-list`: `$warning` / `yellow` when focused
-  - `#preview`: `$success` / `green` when focused
+- One neutral border everywhere (`$panel-lighten-2`), `$accent` via `:focus-within` on the focused
+  panel — tags, files, and preview alike
 
 ## Config Structure
 
@@ -671,7 +669,7 @@ All default to false, so a fresh install shows only Tags and Folders and never a
 whose backing program is missing. Which task tool to use — if any — is the user's choice.
 
 Two switches in `[tools]` are different in kind: `folders = true` and `tags = true` control sidebar
-*panels*, not Tools menu entries. They need no third-party program, so they alone default on, and
+*panels*, not launcher tabs. They need no third-party program, so they alone default on, and
 they are independent views of the local vault (the tree reads the filesystem, tags read the index)
 — neither switch implies the other. Turning one off removes its panel entirely: `TagList` composes
 without it, its accessor (`directory_tree` / `all_tags_list_view`) returns `None`, and the Tab/vim
@@ -688,10 +686,10 @@ real settings (`calendar_name`, `command`).
 
 `ToolsConfig.is_enabled(name)` answers by attribute lookup, so a tool with no field is treated as
 non-optional and always shown; `LibrarianApp.visible_tools()` filters `ALL_TOOLS` through it, and
-`TagList` renders the list it is handed rather than reading the catalog. Enabling a tool inserts it
-in catalog order rather than appending, which a test pins.
+`ToolTabs` builds the strip from the list it is handed rather than reading the catalog. Enabling a
+tool inserts its tab in catalog order rather than appending, which a test pins.
 
-Hiding a tool withholds **all** its UI entry points — the menu row, the `t` binding,
+Hiding a tool withholds **all** its UI entry points — the launcher tab, the `t` binding,
 `action_launch_reminders`, the calendar fetch, and the corresponding entries in the help text — on
 the principle that a shortcut into a hidden feature is worse than no shortcut. Each guard names its
 config key in the message it shows, so the switch stays discoverable.
@@ -704,7 +702,7 @@ into a single `[taskpaper]` table, since TOML forbids a bare key and a table sha
 
 ## Reminders (remtui)
 
-Selecting **Reminders** from the Tools menu suspends Librarian and hands the terminal to
+Activating the **Reminders** tab suspends Librarian and hands the terminal to
 [remtui](https://github.com/7robots/remtui), a Textual TUI for Apple Reminders over the `remctl`
 CLI. Quitting remtui returns to Librarian's panels.
 
@@ -742,7 +740,7 @@ host passes *that*, not a constructed object.
 
 1. **Panel** — with remtui importable, `RemindersModal` (`widgets/reminders_modal.py`) mounts
    remtui's `RemindersPanel` over the Files and Preview panels, leaving the banner, folder tree, and
-   Tools menu visible. Install with `uv sync --extra reminders`.
+   tab strip visible. Install with `uv sync --extra reminders`.
 2. **Handoff** — otherwise Librarian suspends and runs the `remtui` executable.
 
 The fallback is not vestigial: remtui needs Python 3.12+ while Librarian supports 3.10, so on older

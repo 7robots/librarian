@@ -24,25 +24,20 @@ Two things worth keeping on this side:
   which survives `./install.sh` — that syncs `--inexact` — but a bare `uv sync` is exact and would
   replace it with the published package.
 
-### Sidebar layout rework — tabs mockup awaiting sign-off
-With everything enabled the sidebar stacks four panels (Folders, Craft, Tags, Tools), each with
-its own border color, and Folders shares green with Preview. Jefferson finds it busy, jumbled, and
-inconsistent (2026-08-28). Direction chosen 2026-08-28: **full-width tool tabs** — a
-tab strip running the width of the terminal, directly under the banner, one tab per tool with
-its full name (Local Folders, Craft Docs, Projects, Reminders, Calendar, TaskPaper). Each tab
-is a whole workspace, and only tools set true in `[tools]` expose a tab. Consequences: the
-Tools menu and the Reminders/Calendar/Projects modals go away (embedded panels mount tab-sized
-instead — which forces the `q`-meaning question below), TaskPaper's tab is a launcher that
-suspends into taskpapertui, each browsing tab keeps its own tags panel (ALL TAGS in Local
-Folders, CRAFT TAGS in Craft Docs) replacing the shared source-scoped panel, and borders
-normalize to one neutral plus a single focus accent. Rendered Textual mockup: artifact
-"Librarian Tabbed Sidebar" (rev 2), also at ~/Downloads/sidebar-tabs-mockup.html. Open
-questions before a spec'd plan: global tab-cycle key, lazy panel load on first activation,
-the embedded panels' `q -> app.quit` outside a modal, TaskPaper-tab ergonomics, startup tab.
+### ~~Sidebar layout rework~~ — done 2026-08-28 (plan: docs/plans/tool-tabs.md)
+Shipped as **full-width tool tabs** (phases 11–13, signed-off mockup rev 4: artifact "Librarian
+Tabbed Sidebar", also ~/Downloads/sidebar-tabs-mockup.html): a boxed-tab strip the width of the
+terminal under the banner, one tab per enabled tool with its full name. Local Folders and Craft
+Docs are workspace tabs (tree + shared Tags panel, 50/50; `active_source` and tags scope follow
+the tab); TaskPaper/Reminders/Calendar/Projects are launcher tabs that run the tool and snap the
+strip back — **the modals stayed modals** (Jefferson's call after weighing it: `ModalScreen`'s
+key isolation is load-bearing, and the `q`-meaning redesign below stays deferred rather than
+being forced). Borders normalized to one neutral plus a focus accent.
 
-Rejected along the way: a unified BROWSE tree merging Folders and Craft into one tree
-(Jefferson: keep them separate tabs), and sidebar-level tabs with a shared Tags panel below
-(rev 1 of the mockup — superseded by full-width tabs the same day).
+Rejected along the way: a unified BROWSE tree merging Folders and Craft into one tree (keep them
+separate tabs), and sidebar-level tabs with the strip only over the sidebar (mockup rev 1 —
+superseded by full-width tabs the same day). Deferred: a global tab-cycle key (the strip is a
+focus stop and takes left/right; revisit if reaching for it grates).
 
 ### ~~Craft folder icons~~ — done 2026-08-28
 Built as the manual config layer plus one addition prompted by Jefferson's observation that his
