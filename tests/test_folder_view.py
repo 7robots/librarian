@@ -12,7 +12,8 @@ from librarian.config import (
 )
 from librarian.database import add_file, batch_writes
 from librarian.widgets import FileList, TagList
-from librarian.widgets.tag_list import ALL_TOOLS, DEFAULT_TOOLS, ToolItem
+from librarian.widgets.tag_list import ALL_TOOLS
+from librarian.widgets.tool_tabs import ToolTabs, launcher_tool_for
 
 
 @pytest.fixture
@@ -129,15 +130,15 @@ class TestThreePanels:
 
 
 class TestPanelOrder:
-    async def test_panels_run_folders_tags_tools(self, app):
+    async def test_panels_run_folders_then_tags(self, app):
         async with app.run_test(size=(100, 40)) as pilot:
             await pilot.pause()
             ids = [child.id for child in app.query_one(TagList).children]
 
-            assert ids == ["folders-panel", "tags-panel", "tools-panel"]
+            assert ids == ["folders-panel", "tags-panel"]
 
     async def test_focus_order_goes_down_the_left_then_the_right(self, app):
-        """With no tools enabled the Tools panel is empty, so Tab skips it."""
+        """Tab cycles the sidebar panels, then Files, then Preview."""
         async with app.run_test(size=(100, 40)) as pilot:
             await pilot.pause()
             tag_list = app.query_one(TagList)
@@ -160,7 +161,8 @@ class TestPanelOrder:
                 tag_list.directory_tree,
             ]
 
-    async def test_enabled_tools_panel_is_a_focus_stop(self, config, tmp_index):
+    async def test_enabled_launchers_do_not_add_focus_stops(self, config, tmp_index):
+        """Launchers live in the tab strip, not the panel focus cycle."""
         from librarian.app import LibrarianApp
         from librarian.config import ToolsConfig
 
@@ -170,13 +172,14 @@ class TestPanelOrder:
         async with app.run_test(size=(100, 40)) as pilot:
             await pilot.pause()
             tag_list = app.query_one(TagList)
+            file_list = app.query_one(FileList)
 
             tag_list.all_tags_list_view.focus()
             await pilot.pause()
             app.action_focus_next()
             await pilot.pause()
 
-            assert app.focused is tag_list.tools_list_view
+            assert app.focused is file_list.list_view
 
     async def test_shift_tab_walks_back_up(self, app):
         async with app.run_test(size=(100, 40)) as pilot:
@@ -195,17 +198,12 @@ class TestAgentsRemoved:
     def test_not_in_tools_constant(self):
         assert "Agents" not in ALL_TOOLS
 
-    async def test_not_in_tools_menu(self, app):
+    async def test_not_in_the_tab_strip(self, app):
         async with app.run_test(size=(100, 30)) as pilot:
             await pilot.pause()
-            tag_list = app.query_one(TagList)
             names = [
-                item.tool_name
-                for item in tag_list.tools_list_view.children
-                if isinstance(item, ToolItem)
+                str(tab.label) for tab in app.query_one(ToolTabs).query("Tab")
             ]
-
-            assert names == list(DEFAULT_TOOLS)
             assert "Agents" not in names
 
     async def test_placeholder_section_is_gone(self, app):
@@ -473,12 +471,7 @@ class TestFilesFollowsTheLastPanelTouched:
 
 
 class TestSidebarProportions:
-    """Folders and Tags carry equal weight; Tools takes only what it needs.
-
-    The trap: `#tools-list-view` at `height: 1fr` inside the `auto`-height
-    `#tools-panel` grabs the leftover sidebar space, so a three-item launcher
-    menu rendered as tall as the folder tree.
-    """
+    """The visible tree and the Tags panel split the sidebar 50/50."""
 
     async def test_folders_and_tags_are_equal_height(self, app):
         async with app.run_test(size=(100, 40)) as pilot:
@@ -492,7 +485,7 @@ class TestSidebarProportions:
                 f"folders={folders.height} tags={tags.height}"
             )
 
-    async def test_panels_run_folders_then_tags_then_tools(self, app):
+    async def test_panels_run_folders_then_tags(self, app):
         async with app.run_test(size=(100, 40)) as pilot:
             await pilot.pause()
             tag_list = app.query_one(TagList)
@@ -500,37 +493,9 @@ class TestSidebarProportions:
             assert [c.id for c in tag_list.children] == [
                 "folders-panel",
                 "tags-panel",
-                "tools-panel",
             ]
             tops = [
                 tag_list.query_one(f"#{pid}").region.y
-                for pid in ("folders-panel", "tags-panel", "tools-panel")
+                for pid in ("folders-panel", "tags-panel")
             ]
             assert tops == sorted(tops), f"panels are not stacked in order: {tops}"
-
-    async def test_tools_panel_hugs_its_items(self, config, tmp_index):
-        """Three launchers should not take a folder-tree's worth of rows."""
-        from librarian.app import LibrarianApp
-        from librarian.config import ToolsConfig
-
-        config.tools = ToolsConfig(reminders=True, calendar=True, projects=True)
-        app = LibrarianApp(config)
-
-        async with app.run_test(size=(100, 40)) as pilot:
-            await pilot.pause()
-            tag_list = app.query_one(TagList)
-
-            tools = tag_list.query_one("#tools-panel").region
-            folders = tag_list.query_one("#folders-panel").region
-
-            # header + 3 rows + borders, nowhere near the tree's height.
-            assert tools.height <= 8, f"tools panel is {tools.height} rows"
-            assert tools.height < folders.height
-
-    async def test_an_empty_tools_panel_collapses_to_its_header(self, app):
-        async with app.run_test(size=(100, 40)) as pilot:
-            await pilot.pause()
-            tag_list = app.query_one(TagList)
-
-            tools = tag_list.query_one("#tools-panel").region
-            assert tools.height <= 3, f"empty tools panel is {tools.height} rows"

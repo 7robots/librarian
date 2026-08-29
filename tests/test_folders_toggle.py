@@ -117,7 +117,7 @@ class TestFoldersOff:
             tag_list = app.query_one(TagList)
 
             ids = [child.id for child in tag_list.children]
-            assert ids == ["tags-panel", "tools-panel"]
+            assert ids == ["tags-panel"]
             assert tag_list.directory_tree is None
 
     async def test_tags_drive_the_files_panel(self, app):

@@ -192,7 +192,7 @@ class TestEmbedding:
 
             tag_list = app.query_one(TagList)
             assert tag_list.directory_tree.is_mounted
-            assert tag_list.tools_list_view.is_mounted
+            assert app.query_one("#tool-tabs").is_mounted
             assert app.query_one("#banner-art").is_mounted
 
     async def test_panel_covers_only_the_right_hand_side(self, app, fake_backend):

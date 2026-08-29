@@ -7,7 +7,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.css.query import NoMatches
 from textual.timer import Timer
-from textual.widgets import Footer, Static
+from textual.widgets import Footer, Static, Tabs
 from textual.worker import Worker
 
 from .actions import (
@@ -33,6 +33,13 @@ from .watcher import FileWatcher
 from .widgets import Banner, CalendarList, FileList, Preview, TagList, load_file_content
 from .widgets.preview import AUTO_COMPLETE_LINES, BROWSE_LINES
 from .widgets.tag_list import ALL_TOOLS, TagItem
+from .widgets.tool_tabs import (
+    WORKSPACE_TAB_CRAFT,
+    WORKSPACE_TAB_LOCAL,
+    ToolTabs,
+    is_workspace_tab,
+    launcher_tool_for,
+)
 
 
 # How long the file cursor must be still before the preview is rendered at all.
@@ -80,20 +87,20 @@ class LibrarianApp(
 
     #file-list {
         height: 33%;
-        border: solid $warning;
+        border: solid $panel-lighten-2;
     }
 
     #file-list:focus-within {
-        border: solid yellow;
+        border: solid $accent;
     }
 
     #preview {
         height: 67%;
-        border: solid $success;
+        border: solid $panel-lighten-2;
     }
 
     #preview:focus-within {
-        border: solid green;
+        border: solid $accent;
     }
     """
 
@@ -152,13 +159,12 @@ class LibrarianApp(
     ]
 
     # Focus order: down the left column, then down the right. Optional panels
-    # (Folders, Craft, an empty Tools menu) are skipped when their lookup
-    # returns None.
+    # (Folders, Craft, Tags) are skipped when their lookup returns None --
+    # which includes the tree whose workspace tab is not active.
     FOCUS_ORDER = [
         "directory-tree",
         "craft-tree",
         "all-tags-list-view",
-        "tools-list-view",
         "file-list-view",
         "preview",
     ]
@@ -167,7 +173,7 @@ class LibrarianApp(
     # the sidebar's stacked panels, then the two on the right. Tab walks
     # the flat order; ctrl+w needs to know which are neighbours.
     PANEL_GRID = (
-        ("directory-tree", "craft-tree", "all-tags-list-view", "tools-list-view"),
+        ("directory-tree", "craft-tree", "all-tags-list-view"),
         ("file-list-view", "preview"),
     )
 
@@ -188,15 +194,33 @@ class LibrarianApp(
         self._vim_column = ["directory-tree", "file-list-view"]
         # Built by _init_craft() when [tools] craft is on; None otherwise.
         self._craft = None
+        # The workspace tab the strip snaps back to after a launcher tab, and
+        # the guard that makes re-activating the current workspace a no-op
+        # (snap-back re-fires TabActivated for the workspace tab).
+        self._active_workspace_tab = (
+            WORKSPACE_TAB_LOCAL if self._show_local_workspace() else WORKSPACE_TAB_CRAFT
+        )
 
     def visible_tools(self) -> tuple[str, ...]:
-        """Tools to show in the menu, dropping those disabled in config."""
+        """Launcher tools to show as tabs, dropping those disabled in config."""
         return tuple(
             name for name in ALL_TOOLS if self.config.tools.is_enabled(name)
         )
 
+    def _show_local_workspace(self) -> bool:
+        """Whether the Local Folders tab exists: either local panel is on."""
+        return self.config.tools.is_enabled("folders") or self.config.tools.is_enabled(
+            "tags"
+        )
+
     def compose(self) -> ComposeResult:
         yield Banner()
+        yield ToolTabs(
+            show_local=self._show_local_workspace(),
+            show_craft=self.config.tools.is_enabled("craft"),
+            launchers=tuple(name.lower() for name in self.visible_tools()),
+            id="tool-tabs",
+        )
         # The Craft tree's appearance layers over the local one (same-path
         # fallback), so both are built from the one instance.
         appearance = build_folder_appearance(self.config)
@@ -204,7 +228,6 @@ class LibrarianApp(
             yield TagList(
                 scan_directory=self.config.scan_directory,
                 appearance=appearance,
-                tools=self.visible_tools(),
                 show_folders=self.config.tools.is_enabled("folders"),
                 show_tags=self.config.tools.is_enabled("tags"),
                 show_craft=self.config.tools.is_enabled("craft"),
@@ -608,8 +631,17 @@ class LibrarianApp(
                 severity="warning",
             )
             return
+        # #taskpaper is a local-index tag, so bring the local workspace
+        # frontmost first -- the strip may be on Craft Docs. The guard is set
+        # before the strip, so the re-fired activation is a no-op and cannot
+        # steal focus from the tag selection below.
+        self._active_workspace_tab = WORKSPACE_TAB_LOCAL
+        try:
+            self.query_one("#tool-tabs", ToolTabs).active = WORKSPACE_TAB_LOCAL
+        except NoMatches:
+            pass
+        tag_list.show_workspace("folders")
         tag_list.active_source = "tags"
-        # #taskpaper is a local-index tag; the panel may be Craft-scoped.
         tag_list.set_tags_scope("local")
 
         for i, item in enumerate(all_list.children):
@@ -631,15 +663,69 @@ class LibrarianApp(
             return
         self._select_taskpaper_tag()
 
-    def on_tag_list_tool_launched(self, event: TagList.ToolLaunched) -> None:
-        """Handle tool launches from the Tools menu."""
-        if event.tool_name == "taskpaper":
+    def on_tabs_tab_activated(self, event: Tabs.TabActivated) -> None:
+        """Drive the app from the tool tab strip.
+
+        Workspace tabs switch what the sidebar and Files panel show; launcher
+        tabs act like the old Tools menu rows -- launch the tool, then snap the
+        strip back to the last workspace tab so the content underneath never
+        changes hands. The snap-back re-fires this handler for the workspace
+        tab, which the `_active_workspace_tab` guard turns into a no-op.
+        """
+        if event.tabs.id != "tool-tabs":
+            return
+        tab_id = event.tab.id
+
+        if is_workspace_tab(tab_id):
+            if tab_id == self._active_workspace_tab:
+                return  # already there (startup, or a snap-back)
+            self._active_workspace_tab = tab_id
+            self._activate_workspace(tab_id)
+            return
+
+        tool = launcher_tool_for(tab_id)
+        if tool is None:
+            return
+        event.tabs.active = self._active_workspace_tab
+        self._launch_tool(tool)
+
+    def _activate_workspace(self, tab_id: str) -> None:
+        """Point the sidebar, tags scope, and Files panel at a workspace."""
+        tag_list = self.query_one("#tag-list", TagList)
+
+        if tab_id == WORKSPACE_TAB_LOCAL:
+            tag_list.show_workspace("folders")
+            tag_list.set_tags_scope("local")
+            tree = tag_list.directory_tree
+            if tree is not None:
+                tag_list.active_source = "folders"
+                tree.focus()
+            else:
+                tag_list.active_source = "tags"
+                tags = tag_list.all_tags_list_view
+                if tags is not None:
+                    tags.focus()
+        else:
+            tag_list.show_workspace("craft")
+            tag_list.set_tags_scope("craft")
+            tag_list.active_source = "craft"
+            craft = tag_list.craft_tree
+            if craft is not None:
+                # First focus triggers the lazy folder fetch (and `op read`),
+                # so activating the tab is the touch that loads it.
+                craft.focus()
+
+        self._refresh_file_panel()
+
+    def _launch_tool(self, tool: str) -> None:
+        """Launch a tool by name -- what the old Tools menu selection did."""
+        if tool == "taskpaper":
             self._select_taskpaper_tag()
-        elif event.tool_name == "reminders":
+        elif tool == "reminders":
             self.action_launch_reminders()
-        elif event.tool_name == "calendar":
+        elif tool == "calendar":
             self.action_open_calendar()
-        elif event.tool_name == "projects":
+        elif tool == "projects":
             self.action_launch_projects()
 
     async def on_tag_list_folder_highlighted(

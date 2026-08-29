@@ -3,6 +3,7 @@
 from .banner import Banner
 from .craft_tree import CraftTree
 from .tag_list import TagList
+from .tool_tabs import ToolTabs
 from .file_list import FileList
 from .preview import Preview, load_file_content
 from .file_info import RenameModal, MoveModal, AssociateModal, FileInfoModal
@@ -18,6 +19,7 @@ __all__ = [
     "Banner",
     "CraftTree",
     "TagList",
+    "ToolTabs",
     "FileList",
     "Preview",
     "load_file_content",

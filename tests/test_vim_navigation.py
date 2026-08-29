@@ -71,12 +71,11 @@ def app(make_app):
 
 
 def panels(app):
-    """The five focusable panels, by name."""
+    """The four focusable panels, by name."""
     tag_list = app.query_one(TagList)
     return {
         "folders": tag_list.directory_tree,
         "tags": tag_list.all_tags_list_view,
-        "tools": tag_list.tools_list_view,
         "files": app.query_one(FileList).list_view,
         "preview": app.query_one("#preview").scroll_view,
     }
@@ -102,8 +101,8 @@ class TestMovingWithinAColumn:
 
             assert app.focused is panels(app)["folders"]
 
-    async def test_down_skips_an_empty_tools_panel_and_stops(self, app):
-        """No tools enabled: Tools is not a stop, and there is nothing below."""
+    async def test_down_at_the_bottom_of_the_left_column_stays_put(self, app):
+        """Tags is the last stop in the sidebar; launchers live in the strip."""
         async with app.run_test(size=(100, 40)) as pilot:
             await pilot.pause()
             panels(app)["tags"].focus()
@@ -113,18 +112,6 @@ class TestMovingWithinAColumn:
             await pilot.pause()
 
             assert app.focused is panels(app)["tags"]
-
-    async def test_down_reaches_tools_when_a_tool_is_enabled(self, make_app):
-        app = make_app(tools=ToolsConfig(reminders=True))
-        async with app.run_test(size=(100, 40)) as pilot:
-            await pilot.pause()
-            panels(app)["tags"].focus()
-            await pilot.pause()
-
-            await pilot.press("ctrl+w", "j")
-            await pilot.pause()
-
-            assert app.focused is panels(app)["tools"]
 
     async def test_up_at_the_top_stays_put(self, app):
         """vim does not wrap on ctrl+w k; Tab still does, and is untouched."""
@@ -219,10 +206,10 @@ class TestMovingBetweenColumns:
             assert app.focused is panels(app)["folders"]
 
     async def test_a_remembered_panel_that_vanished_falls_back(self, app):
-        """Tools can empty out; the column must still be reachable."""
+        """A remembered panel can be hidden or gone; the column must still be reachable."""
         async with app.run_test(size=(100, 40)) as pilot:
             await pilot.pause()
-            app._vim_column[0] = "tools-list-view"  # nothing is enabled
+            app._vim_column[0] = "craft-tree"  # not composed: craft is off
             panels(app)["files"].focus()
             await pilot.pause()
 

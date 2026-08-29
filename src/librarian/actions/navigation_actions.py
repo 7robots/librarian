@@ -16,18 +16,21 @@ from ..widgets.calendar_list import CalendarList
 class NavigationActionsMixin:
     """Mixin providing navigation actions (focus, back, wiki links, search, help)."""
 
+    @staticmethod
+    def _visible_tree(tree):
+        """A tree, or None when it is hidden -- the inactive workspace's tree
+        is composed but not displayed, and a hidden panel is not a focus stop."""
+        if tree is None or not tree.display:
+            return None
+        return tree
+
     def _get_focus_widget(self, widget_id: str):
         """Get a focusable widget by ID."""
         tag_list = self.query_one("#tag-list", TagList)
-        if widget_id == "tools-list-view":
-            tools = tag_list.tools_list_view
-            # With every tool optional, the menu can be empty; an empty panel is
-            # not worth a Tab stop.
-            return tools if list(tools.children) else None
-        elif widget_id == "directory-tree":
-            return tag_list.directory_tree
+        if widget_id == "directory-tree":
+            return self._visible_tree(tag_list.directory_tree)
         elif widget_id == "craft-tree":
-            return tag_list.craft_tree
+            return self._visible_tree(tag_list.craft_tree)
         elif widget_id == "all-tags-list-view":
             return tag_list.all_tags_list_view
         elif widget_id == "file-list-view":
@@ -47,9 +50,8 @@ class NavigationActionsMixin:
         preview = self.query_one("#preview", Preview)
 
         focus_map = {
-            id(tag_list.tools_list_view): 3,
-            id(file_list.list_view): 4,
-            id(preview.scroll_view): 5,
+            id(file_list.list_view): 3,
+            id(preview.scroll_view): 4,
         }
         # The sidebar's browsing panels are all optional, so any of the three
         # may not exist at all.

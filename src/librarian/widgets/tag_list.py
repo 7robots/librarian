@@ -20,21 +20,10 @@ from .craft_tree import CraftTree
 # Maximum tags to display before showing "Show more" item
 MAX_DISPLAY_TAGS = 200
 
-# Every tool Librarian knows about, in display order. Folders and Tags are no
-# longer here: they have permanent panels of their own, so everything in the
-# Tools menu now launches something.
+# Every launcher tool Librarian knows about, in display order. Folders and Tags
+# are not here: they are workspace panels. Each of these gets a launcher tab in
+# the strip when enabled in [tools].
 ALL_TOOLS = ("TaskPaper", "Reminders", "Calendar", "Projects")
-
-# Tools hidden unless enabled in config. The code behind them stays live; only
-# the menu entry is withheld.
-OPTIONAL_TOOLS = ALL_TOOLS
-
-# What the menu shows when nothing is configured: nothing, since every tool
-# needs a third-party program.
-DEFAULT_TOOLS: tuple[str, ...] = ()
-
-# Every tool now launches something rather than switching a panel.
-LAUNCHER_TOOLS = ("taskpaper", "reminders", "calendar", "projects")
 
 # Which panel drives the Files list at startup. Folders leads because content is
 # organized by folder; tags are a shortcut list alongside it.
@@ -151,19 +140,14 @@ class ShowMoreItem(ListItem):
         yield Label(f"... show {self.remaining} more ({self.total_count} total)")
 
 
-class ToolItem(ListItem):
-    """A list item representing a tool in the Tools menu."""
-
-    def __init__(self, tool_name: str) -> None:
-        super().__init__()
-        self.tool_name = tool_name
-
-    def compose(self) -> ComposeResult:
-        yield Label(self.tool_name)
-
-
 class TagList(Vertical):
-    """Widget displaying Tools menu at top and switchable content panel below."""
+    """The sidebar: the active workspace's tree over the scoped Tags panel.
+
+    Both trees (Folders and Craft) are composed when enabled, but only the
+    active workspace's tree is shown -- `show_workspace()` flips them. The
+    Tags panel is shared, following the workspace's scope, and splits the
+    sidebar 50/50 with the visible tree.
+    """
 
     DEFAULT_CSS = """
     TagList {
@@ -178,80 +162,33 @@ class TagList(Vertical):
         height: 1;
     }
 
-    TagList #tools-header {
-        color: $warning;
-    }
-
-    /* Folders and Tags split the sidebar evenly -- browsing a tree and
-       jumping to a tag are equally weighted, and neither should crowd the
-       other. Tools takes only the rows its launchers need, at the bottom. */
+    /* The visible tree and the Tags panel split the sidebar 50/50. One
+       neutral border everywhere; the focused panel takes the accent. */
     TagList #folders-panel {
         height: 1fr;
-        border: solid $success;
+        border: solid $panel-lighten-2;
     }
 
     TagList #folders-panel:focus-within {
-        border: solid green;
+        border: solid $accent;
     }
 
     TagList #craft-panel {
         height: 1fr;
-        border: solid $secondary;
+        border: solid $panel-lighten-2;
     }
 
     TagList #craft-panel:focus-within {
-        border: solid magenta;
-    }
-
-    TagList #craft-header {
-        color: $secondary;
+        border: solid $accent;
     }
 
     TagList #tags-panel {
         height: 1fr;
-        border: solid $primary;
+        border: solid $panel-lighten-2;
     }
 
     TagList #tags-panel:focus-within {
-        border: solid $primary-lighten-2;
-    }
-
-    TagList #tools-panel {
-        height: auto;
-        max-height: 40%;
         border: solid $accent;
-    }
-
-    TagList #tools-panel:focus-within {
-        border: solid cyan;
-    }
-
-    /* auto, not 1fr: a 1fr child inside the auto-height #tools-panel grabs
-       the leftover sidebar space, which made a three-item menu render as tall
-       as the folder tree. auto also keeps the panel collapsing to its header
-       when no tools are enabled. */
-    TagList #tools-list-view {
-        height: auto;
-    }
-
-    TagList #tools-list-view ListItem {
-        padding: 0 1;
-    }
-
-    TagList #tools-list-view ListItem:hover {
-        background: $boost;
-    }
-
-    TagList #tools-list-view ListItem.--highlight {
-        background: $accent;
-    }
-
-    TagList #all-tags-header {
-        color: $primary-lighten-2;
-    }
-
-    TagList #folders-header {
-        color: $success;
     }
 
     TagList ListView {
@@ -296,13 +233,6 @@ class TagList(Vertical):
             super().__init__()
             self.folder_path = folder_path
 
-    class ToolLaunched(Message):
-        """Message emitted when a tool is selected from the Tools menu."""
-
-        def __init__(self, tool_name: str) -> None:
-            super().__init__()
-            self.tool_name = tool_name
-
     class CraftFolderHighlighted(Message):
         """Message emitted when the Craft tree cursor moves to a folder."""
 
@@ -321,7 +251,6 @@ class TagList(Vertical):
         self,
         scan_directory: Path | None = None,
         appearance: FolderAppearance | None = None,
-        tools: tuple[str, ...] | None = None,
         show_folders: bool = True,
         show_tags: bool = True,
         show_craft: bool = False,
@@ -330,7 +259,6 @@ class TagList(Vertical):
     ) -> None:
         super().__init__(**kwargs)
         self._craft_appearance = craft_appearance
-        self.tools = tuple(tools) if tools is not None else DEFAULT_TOOLS
         self.show_folders = show_folders
         self.show_tags = show_tags
         self.show_craft = show_craft
@@ -346,6 +274,8 @@ class TagList(Vertical):
             self.active_source = "tags"
         else:
             self.active_source = "craft"
+        # Which workspace's tree the sidebar shows; set for real on mount.
+        self._workspace = "folders" if (show_folders or show_tags) else "craft"
         self._tags_show_all: bool = False
         # Which source the Tags panel reflects: "local" (the index) or
         # "craft". Follows whichever tree was last highlighted, so the panel
@@ -354,10 +284,9 @@ class TagList(Vertical):
         self._craft_tags: list[tuple[str, int]] = []
 
     def compose(self) -> ComposeResult:
-        # Three permanent panels. Folders and Tags are both visible because they
-        # do different jobs -- the tree is for browsing, a tag like #meetings is
-        # a shortcut list -- and switching between them lost sight of the other.
-        # The folder browser is the one optional panel ([tools] folders).
+        # Both trees are composed when enabled; show_workspace() flips which
+        # one is visible. The Tags panel is shared beneath, its scope following
+        # the active workspace.
         if self.show_folders:
             with Vertical(id="folders-panel"):
                 yield Static("FOLDERS", classes="tag-header", id="folders-header")
@@ -374,16 +303,39 @@ class TagList(Vertical):
             with Vertical(id="tags-panel"):
                 yield Static("ALL TAGS", classes="tag-header", id="all-tags-header")
                 yield ListView(id="all-tags-list-view")
-        with Vertical(id="tools-panel"):
-            yield Static("\u2605 TOOLS", classes="tag-header", id="tools-header")
-            yield ListView(
-                *(ToolItem(name) for name in self.tools),
-                id="tools-list-view",
-            )
+
+    def on_mount(self) -> None:
+        """Start with one workspace visible: local when present, else Craft.
+
+        The local workspace exists when either of its panels does -- a
+        folders-off, tags-on config still browses locally, just without the
+        tree.
+        """
+        self.show_workspace(
+            "folders" if (self.show_folders or self.show_tags) else "craft"
+        )
+
+    def show_workspace(self, workspace: str) -> None:
+        """Show one workspace's tree in the sidebar ("folders" or "craft").
+
+        The other tree is hidden, not removed -- its cursor, expansion state,
+        and loaded Craft folders all survive the flip. Panels that are not
+        composed at all (turned off in [tools]) are left alone.
+        """
+        self._workspace = workspace
+        for panel_id, wanted in (
+            ("#folders-panel", workspace == "folders"),
+            ("#craft-panel", workspace == "craft"),
+        ):
+            try:
+                self.query_one(panel_id).display = wanted
+            except NoMatches:
+                continue
 
     @property
-    def tools_list_view(self) -> ListView:
-        return self.query_one("#tools-list-view", ListView)
+    def workspace(self) -> str:
+        """The workspace whose tree is currently shown."""
+        return self._workspace
 
     @property
     def all_tags_list_view(self) -> ListView | None:
@@ -554,16 +506,8 @@ class TagList(Vertical):
             craft.focus()
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
-        """Handle selection from tools menu or tag list."""
+        """Handle selection from the tag list."""
         item = event.item
-
-        # Handle tools menu selection
-        if isinstance(item, ToolItem):
-            tool = item.tool_name.lower()
-            # Every tool launches something; the sidebar panels stay put.
-            if tool in LAUNCHER_TOOLS:
-                self.post_message(self.ToolLaunched(tool))
-            return
 
         # Handle "Show more" item
         if isinstance(item, ShowMoreItem):

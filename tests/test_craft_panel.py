@@ -174,7 +174,7 @@ class TestPanel:
         async with app.run_test(size=(100, 40)) as pilot:
             await pilot.pause()
             ids = [child.id for child in app.query_one(TagList).children]
-            assert ids == ["folders-panel", "craft-panel", "tags-panel", "tools-panel"]
+            assert ids == ["folders-panel", "craft-panel", "tags-panel"]
 
     async def test_client_is_built_from_config(self, app):
         async with app.run_test(size=(100, 40)) as pilot:

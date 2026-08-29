@@ -38,15 +38,17 @@ Tabbed Sidebar" rev 4, also `~/Downloads/sidebar-tabs-mockup.html`.
 
 ## Phases
 
-### Phase 11 — the strip and workspace tabs  ⏳
+### Phase 11 — the strip, workspace tabs, and launcher tabs  ✅
 `ToolTabs` widget + app compose; TagList loses the Tools panel and gains switched tree panels
 (50/50 with Tags); tab activation drives `active_source`/tags scope/file panel; startup tab.
-Verify: `uv run pytest tests/test_tool_tabs.py tests/test_folders_toggle.py tests/test_tags_toggle.py tests/test_craft_panel.py -q`
+Launcher wiring landed here too — see phase 12.
+Verify: `uv run pytest tests/test_tool_tabs.py tests/test_folders_toggle.py tests/test_tags_toggle.py tests/test_craft_panel.py tests/test_calendar_modal.py tests/test_folder_view.py tests/test_vim_navigation.py tests/test_reminders.py tests/test_projects.py -q`
 
-### Phase 12 — launcher tabs  ⏳
-Launcher tabs invoke the existing tool actions and snap back to the last workspace tab; per-tool
-gating; help text updated. ToolLaunched/ToolItem plumbing removed.
-Verify: `uv run pytest tests/test_tool_tabs.py tests/test_reminders.py tests/test_projects.py tests/test_calendar_modal.py -q`
+### Phase 12 — launcher tabs  ✅ absorbed into phase 11
+Deleting the Tools panel orphaned the menu-launch path mid-phase, so the launcher wiring
+(snap-back tabs invoking the existing tool actions, gating, ToolLaunched/ToolItem removal) and
+its test rewrites could not be deferred — a phase-11 defect fixed inside the phase.
+Verify: covered by phase 11's command.
 
 ### Phase 13 — focus order, vim grid, border normalization  ⏳
 FOCUS_ORDER/PANEL_GRID drop the Tools stop and treat the hidden tree as absent; the strip joins

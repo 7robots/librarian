@@ -14,7 +14,8 @@ from librarian.actions.projects_actions import (
 )
 from librarian.config import CalendarConfig, Config, TagConfig, ToolsConfig
 from librarian.widgets import TagList
-from librarian.widgets.tag_list import ALL_TOOLS, LAUNCHER_TOOLS, ToolItem
+from librarian.widgets.tag_list import ALL_TOOLS
+from librarian.widgets.tool_tabs import LAUNCHER_TAB_IDS, ToolTabs, launcher_tool_for
 
 
 class TestResolveCommand:
@@ -67,7 +68,7 @@ class TestToolsMenu:
         assert "Projects" in ALL_TOOLS
 
     def test_projects_is_a_launcher_not_a_panel(self):
-        assert "projects" in LAUNCHER_TOOLS
+        assert "projects" in LAUNCHER_TAB_IDS
 
     def test_projects_comes_last_in_the_catalog(self):
         """Catalog order is the menu order; new tools append."""
@@ -131,7 +132,7 @@ class TestLaunching:
     async def test_selecting_the_tool_launches_projection(
         self, no_embedded_panel, app, monkeypatch, tmp_path
     ):
-        """End to end: picking Projects from the menu suspends and runs it."""
+        """End to end: activating the Projects tab suspends and runs it."""
         binary = tmp_path / "projection"
         binary.write_text("#!/bin/sh\n")
         app.config.projects = str(binary)
@@ -147,22 +148,14 @@ class TestLaunching:
             suspend = FakeSuspend()
             monkeypatch.setattr(app, "suspend", suspend)
 
-            tools = app.query_one(TagList).tools_list_view
-            tools.focus()
-            await pilot.pause()
-
-            item = next(
-                i
-                for i in tools.children
-                if isinstance(i, ToolItem) and i.tool_name == "Projects"
-            )
-            tools.index = list(tools.children).index(item)
-            await pilot.press("enter")
+            app.query_one(ToolTabs).active = "tab-projects"
             await pilot.pause()
             await pilot.pause()
 
             assert suspend.entered
             assert calls == [[str(binary)]]
+            # The launcher tab snaps back; the workspace never changes hands.
+            assert app.query_one(ToolTabs).active == "tab-local"
 
     async def test_missing_binary_notifies_instead_of_launching(
         self, no_embedded_panel, app, monkeypatch
@@ -320,9 +313,9 @@ class TestDisabledByDefault:
         async with off_app.run_test(size=(100, 30)) as pilot:
             await pilot.pause()
             names = [
-                item.tool_name
-                for item in off_app.query_one(TagList).tools_list_view.children
-                if isinstance(item, ToolItem)
+                str(tab.label)
+                for tab in off_app.query_one(ToolTabs).query("Tab")
+                if launcher_tool_for(tab.id) is not None
             ]
             assert "Projects" not in names
 

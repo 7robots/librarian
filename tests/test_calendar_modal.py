@@ -77,28 +77,24 @@ class TestOpening:
 
             assert [e.title for e in modal.calendar_list._events] == ["Standup"]
 
-    async def test_selecting_calendar_in_the_tools_menu_opens_it(self, app, events):
-        """The Tools menu is the user's route in, not just the action."""
+    async def test_activating_the_calendar_tab_opens_it(self, app, events):
+        """The tab strip is the user's route in, not just the action."""
+        from librarian.widgets import ToolTabs
+
         async with app.run_test(size=(100, 40)) as pilot:
             await pilot.pause()
-            tag_list = app.query_one(TagList)
+            tabs = app.query_one(ToolTabs)
+            assert "tab-calendar" in [tab.id for tab in tabs.query("Tab")]
 
-            names = [
-                str(item.query_one("Static").render())
-                for item in tag_list.tools_list_view.children
-            ]
-            assert "Calendar" in names
-
-            tag_list.tools_list_view.focus()
-            tag_list.tools_list_view.index = names.index("Calendar")
-            await pilot.pause()
-            await pilot.press("enter")
+            tabs.active = "tab-calendar"
             for _ in range(20):
                 await pilot.pause()
                 if isinstance(app.screen, CalendarModal):
                     break
 
             assert isinstance(app.screen, CalendarModal)
+            # The launcher tab snapped back; the workspace never changed hands.
+            assert tabs.active == "tab-local"
 
     async def test_fetch_failure_is_shown_in_the_modal(self, app, monkeypatch):
         """An empty day and a broken icalPal must not look the same."""

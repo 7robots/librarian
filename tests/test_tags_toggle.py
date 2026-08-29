@@ -125,7 +125,7 @@ class TestTagsOff:
             tag_list = app.query_one(TagList)
             assert tag_list.all_tags_list_view is None
             ids = [child.id for child in tag_list.children]
-            assert ids == ["folders-panel", "tools-panel"]
+            assert ids == ["folders-panel"]
 
     async def test_folders_still_lead(self, app):
         async with app.run_test(size=(100, 40)) as pilot:
@@ -209,4 +209,4 @@ class TestCraftOnly:
         async with app.run_test(size=(100, 40)) as pilot:
             await pilot.pause()
             ids = [child.id for child in app.query_one(TagList).children]
-            assert ids == ["tools-panel"]
+            assert ids == []
