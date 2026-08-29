@@ -278,7 +278,9 @@ class TestTheSwitch:
             assert app.check_action("search", ()) is not False
 
     async def test_tab_still_walks_the_flat_order(self, app):
-        """The vim keys are additive: Tab keeps wrapping, vim keys do not."""
+        """The vim keys are additive: Tab keeps wrapping, vim keys do not.
+
+        The wrap now passes through the tool tab strip, the first stop."""
         async with app.run_test(size=(100, 40)) as pilot:
             await pilot.pause()
             panels(app)["preview"].focus()
@@ -286,7 +288,10 @@ class TestTheSwitch:
 
             await pilot.press("tab")
             await pilot.pause()
+            assert app.focused is app.query_one("#tool-tabs")
 
+            await pilot.press("tab")
+            await pilot.pause()
             assert app.focused is panels(app)["folders"]
 
 

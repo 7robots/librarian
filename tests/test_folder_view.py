@@ -149,7 +149,7 @@ class TestPanelOrder:
             await pilot.pause()
 
             seen = []
-            for _ in range(4):
+            for _ in range(5):
                 app.action_focus_next()
                 await pilot.pause()
                 seen.append(app.focused)
@@ -158,6 +158,7 @@ class TestPanelOrder:
                 tag_list.all_tags_list_view,
                 file_list.list_view,
                 preview.scroll_view,
+                app.query_one("#tool-tabs"),
                 tag_list.directory_tree,
             ]
 

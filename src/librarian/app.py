@@ -158,10 +158,14 @@ class LibrarianApp(
         Binding("h", "vim_collapse", "Collapse", show=False),
     ]
 
-    # Focus order: down the left column, then down the right. Optional panels
-    # (Folders, Craft, Tags) are skipped when their lookup returns None --
-    # which includes the tree whose workspace tab is not active.
+    # Focus order: the tab strip, then down the left column, then down the
+    # right. Optional panels (Folders, Craft, Tags) are skipped when their
+    # lookup returns None -- which includes the tree whose workspace tab is
+    # not active. The strip is a Tab stop so tabs are keyboard-reachable
+    # (left/right switch tabs once it has focus); it is deliberately not in
+    # PANEL_GRID, whose columns are content panels for ctrl+w movement.
     FOCUS_ORDER = [
+        "tool-tabs",
         "directory-tree",
         "craft-tree",
         "all-tags-list-view",

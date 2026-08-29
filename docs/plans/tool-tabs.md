@@ -50,10 +50,11 @@ Deleting the Tools panel orphaned the menu-launch path mid-phase, so the launche
 its test rewrites could not be deferred — a phase-11 defect fixed inside the phase.
 Verify: covered by phase 11's command.
 
-### Phase 13 — focus order, vim grid, border normalization  ⏳
-FOCUS_ORDER/PANEL_GRID drop the Tools stop and treat the hidden tree as absent; the strip joins
-the Tab cycle; borders/headers normalized per the mockup.
-Verify: `uv run pytest tests/test_vim_navigation.py tests/test_tool_tabs.py -q`
+### Phase 13 — focus order, vim grid, border normalization  ✅
+FOCUS_ORDER/PANEL_GRID drop the Tools stop and treat the hidden tree as absent (checked up the
+ancestry -- display sits on the panel, not the tree); the strip joins the Tab cycle as the first
+stop; borders/headers normalized per the mockup (modals keep cyan -- they should stand out).
+Verify: `uv run pytest tests/test_vim_navigation.py tests/test_tool_tabs.py tests/test_folder_view.py -q`
 
 ### Phase 14 — docs  ⏳
 CLAUDE.md UI Layout / Widget Communication / Keyboard Navigation sections rewritten; ROADMAP

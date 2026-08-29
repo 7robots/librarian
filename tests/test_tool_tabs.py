@@ -168,6 +168,55 @@ class TestWorkspaceTabs:
             assert "note.md" in [p.name for p in file_list._files]
 
 
+class TestFocusCycle:
+    async def test_tab_cycle_includes_the_strip_and_skips_the_hidden_tree(
+        self, app_all_tools
+    ):
+        async with app_all_tools.run_test(size=(110, 34)) as pilot:
+            await pilot.pause()
+            tag_list = app_all_tools.query_one(TagList)
+            file_list = app_all_tools.query_one(FileList)
+            preview = app_all_tools.query_one("#preview")
+            tabs = app_all_tools.query_one(ToolTabs)
+
+            tag_list.directory_tree.focus()
+            await pilot.pause()
+
+            seen = []
+            for _ in range(5):
+                app_all_tools.action_focus_next()
+                await pilot.pause()
+                seen.append(app_all_tools.focused)
+
+            # The Craft tree is composed but hidden (its tab is not active),
+            # so it is not a stop; the strip is.
+            assert seen == [
+                tag_list.all_tags_list_view,
+                file_list.list_view,
+                preview.scroll_view,
+                tabs,
+                tag_list.directory_tree,
+            ]
+
+    async def test_the_active_workspaces_tree_is_the_one_in_the_cycle(
+        self, app_all_tools
+    ):
+        async with app_all_tools.run_test(size=(110, 34)) as pilot:
+            await pilot.pause()
+            tag_list = app_all_tools.query_one(TagList)
+            tabs = app_all_tools.query_one(ToolTabs)
+            tabs.active = "tab-craft"
+            await pilot.pause()
+            await pilot.pause()
+
+            tabs.focus()
+            await pilot.pause()
+            app_all_tools.action_focus_next()
+            await pilot.pause()
+
+            assert app_all_tools.focused is tag_list.craft_tree
+
+
 class TestLauncherTabs:
     async def test_calendar_tab_opens_the_modal_and_snaps_back(self, app_all_tools):
         async with app_all_tools.run_test(size=(110, 34)) as pilot:

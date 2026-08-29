@@ -19,15 +19,25 @@ class NavigationActionsMixin:
     @staticmethod
     def _visible_tree(tree):
         """A tree, or None when it is hidden -- the inactive workspace's tree
-        is composed but not displayed, and a hidden panel is not a focus stop."""
-        if tree is None or not tree.display:
+        is composed but not displayed, and a hidden panel is not a focus stop.
+
+        `display` is checked up the ancestry: the workspace flip sets it on the
+        enclosing panel, and a child of a `display: none` parent still reports
+        its own `display` as True.
+        """
+        if tree is None:
             return None
+        for node in (tree, *tree.ancestors):
+            if getattr(node, "display", True) is False:
+                return None
         return tree
 
     def _get_focus_widget(self, widget_id: str):
         """Get a focusable widget by ID."""
         tag_list = self.query_one("#tag-list", TagList)
-        if widget_id == "directory-tree":
+        if widget_id == "tool-tabs":
+            return self.query_one("#tool-tabs")
+        elif widget_id == "directory-tree":
             return self._visible_tree(tag_list.directory_tree)
         elif widget_id == "craft-tree":
             return self._visible_tree(tag_list.craft_tree)
@@ -50,20 +60,21 @@ class NavigationActionsMixin:
         preview = self.query_one("#preview", Preview)
 
         focus_map = {
-            id(file_list.list_view): 3,
-            id(preview.scroll_view): 4,
+            id(self.query_one("#tool-tabs")): 0,
+            id(file_list.list_view): 4,
+            id(preview.scroll_view): 5,
         }
         # The sidebar's browsing panels are all optional, so any of the three
         # may not exist at all.
         tree = tag_list.directory_tree
         if tree is not None:
-            focus_map[id(tree)] = 0
+            focus_map[id(tree)] = 1
         craft = tag_list.craft_tree
         if craft is not None:
-            focus_map[id(craft)] = 1
+            focus_map[id(craft)] = 2
         tags = tag_list.all_tags_list_view
         if tags is not None:
-            focus_map[id(tags)] = 2
+            focus_map[id(tags)] = 3
         return focus_map.get(id(focused), -1)
 
     def action_focus_next(self) -> None:
