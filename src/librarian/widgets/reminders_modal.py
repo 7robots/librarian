@@ -1,8 +1,8 @@
-"""Modal that hosts remtui's reminders panel over Librarian's right-hand panels.
+"""Modal that hosts remtui's reminders panel below the tool tab strip.
 
 remtui exposes its UI as a widget (`RemindersPanel`), so this is a frame around
-it: a modal screen sized and positioned to cover the Files and Preview panels,
-leaving the banner, the folder tree, and the Tools menu visible behind.
+it: a full-width modal frame covering the sidebar and both right panels,
+leaving the banner and the tool tab strip visible above.
 
 The import is deliberately local to `is_available()` / `build()`: remtui is an
 optional dependency, and Librarian must run without it.
@@ -19,14 +19,13 @@ from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Footer, Static
 
-# Rows the banner occupies, and the footer's single row -- the modal is inset by
-# these so both stay visible.
+# Rows the banner and the tool tab strip occupy, and the footer's single row --
+# the modal is inset by these so all three stay visible. The strip stays in
+# view so the user never loses where they are, but a ModalScreen blocks input
+# to what it covers: switching tabs means closing the modal first.
 BANNER_HEIGHT = 3
+TAB_STRIP_HEIGHT = 3
 FOOTER_HEIGHT = 1
-
-# Matches the sidebar width in LibrarianApp.CSS, so the modal starts exactly
-# where the right-hand panels do.
-SIDEBAR_WIDTH_PERCENT = 25
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +58,7 @@ def is_available() -> bool:
 
 
 class RemindersModal(ModalScreen[None]):
-    """remtui's reminders panel, framed over Librarian's right-hand panels."""
+    """remtui's reminders panel, framed below the tab strip."""
 
     DEFAULT_CSS = f"""
     RemindersModal {{
@@ -69,9 +68,9 @@ class RemindersModal(ModalScreen[None]):
     }}
 
     RemindersModal > #reminders-frame {{
-        width: {100 - SIDEBAR_WIDTH_PERCENT}%;
+        width: 100%;
         height: 100%;
-        margin: {BANNER_HEIGHT} 0 {FOOTER_HEIGHT} 0;
+        margin: {BANNER_HEIGHT + TAB_STRIP_HEIGHT} 0 {FOOTER_HEIGHT} 0;
         border: solid $accent;
         background: $surface;
     }}

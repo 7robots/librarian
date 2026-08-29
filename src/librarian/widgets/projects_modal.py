@@ -1,4 +1,4 @@
-"""Modal that hosts projection's projects panel over Librarian's right-hand panels.
+"""Modal that hosts projection's projects panel below the tool tab strip.
 
 The same frame `reminders_modal.py` uses, for the same reason: projection exposes
 its UI as a widget (`ProjectsPanel`) rather than a Screen, so it can be mounted
@@ -19,14 +19,13 @@ from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Footer, Static
 
-# Rows the banner occupies, and the footer's single row -- the modal is inset by
-# these so both stay visible.
+# Rows the banner and the tool tab strip occupy, and the footer's single row --
+# the modal is inset by these so all three stay visible. The strip stays in
+# view so the user never loses where they are, but a ModalScreen blocks input
+# to what it covers: switching tabs means closing the modal first.
 BANNER_HEIGHT = 3
+TAB_STRIP_HEIGHT = 3
 FOOTER_HEIGHT = 1
-
-# Matches the sidebar width in LibrarianApp.CSS, so the modal starts exactly
-# where the right-hand panels do.
-SIDEBAR_WIDTH_PERCENT = 25
 
 
 def is_available() -> bool:
@@ -41,7 +40,7 @@ def is_available() -> bool:
 
 
 class ProjectsModal(ModalScreen[None]):
-    """projection's projects panel, framed over Librarian's right-hand panels."""
+    """projection's projects panel, framed below the tab strip."""
 
     DEFAULT_CSS = f"""
     ProjectsModal {{
@@ -51,9 +50,9 @@ class ProjectsModal(ModalScreen[None]):
     }}
 
     ProjectsModal > #projects-frame {{
-        width: {100 - SIDEBAR_WIDTH_PERCENT}%;
+        width: 100%;
         height: 100%;
-        margin: {BANNER_HEIGHT} 0 {FOOTER_HEIGHT} 0;
+        margin: {BANNER_HEIGHT + TAB_STRIP_HEIGHT} 0 {FOOTER_HEIGHT} 0;
         border: solid $accent;
         background: $surface;
     }}

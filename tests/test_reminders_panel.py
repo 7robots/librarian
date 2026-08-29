@@ -94,17 +94,18 @@ class TestEmbedding:
             assert tag_list.directory_tree.is_mounted
             assert app.query_one("#banner-art").is_mounted
 
-    async def test_panel_covers_only_the_right_hand_side(self, app, tmp_path, monkeypatch):
+    async def test_panel_covers_the_full_width_below_the_strip(self, app, tmp_path, monkeypatch):
         async with app.run_test(size=(120, 38)) as pilot:
             await pilot.pause()
             panel = await open_panel(app, pilot, tmp_path, monkeypatch)
             frame = app.screen.query_one("#reminders-frame")
 
-            # 75% of 120 columns, leaving the sidebar visible.
-            assert frame.size.width == pytest.approx(90, abs=2)
-            # Banner and footer rows stay clear.
+            # Full width: the frame covers the sidebar too (region includes
+            # the border; size would exclude it).
+            assert frame.region.width == app.screen.size.width
+            # Banner, tab strip, and footer rows stay clear above and below.
+            assert frame.region.y == 6
             assert frame.size.height < app.screen.size.height
-            assert panel.size.width < app.screen.size.width
 
 
 class TestChrome:

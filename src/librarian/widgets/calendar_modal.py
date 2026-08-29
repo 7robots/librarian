@@ -1,4 +1,4 @@
-"""Modal that shows today's meetings over Librarian's right-hand panels.
+"""Modal that shows today's meetings below the tool tab strip.
 
 Calendar used to share the sidebar with Folders and Tags. Now that those two are
 permanent, it moved here — the same frame the Reminders panel uses, so every tool
@@ -7,7 +7,8 @@ that shows its own data behaves the same way.
 Unlike Reminders, the calendar is not self-contained: highlighting a meeting
 shows either its associated note or the meeting's own details. So the frame
 carries a `Preview` of its own rather than writing into the one behind it, which
-the modal covers.
+the modal covers. The frame is full-width, covering the sidebar and both right
+panels; the banner and the tab strip stay visible above it.
 """
 
 from __future__ import annotations
@@ -21,18 +22,17 @@ from textual.widgets import Footer, Static
 from .calendar_list import CalendarList
 from .preview import Preview
 
-# Rows the banner occupies, and the footer's single row -- the modal is inset by
-# these so both stay visible.
+# Rows the banner and the tool tab strip occupy, and the footer's single row --
+# the modal is inset by these so all three stay visible. The strip stays in
+# view so the user never loses where they are, but a ModalScreen blocks input
+# to what it covers: switching tabs means closing the modal first.
 BANNER_HEIGHT = 3
+TAB_STRIP_HEIGHT = 3
 FOOTER_HEIGHT = 1
-
-# Matches the sidebar width in LibrarianApp.CSS, so the modal starts exactly
-# where the right-hand panels do.
-SIDEBAR_WIDTH_PERCENT = 25
 
 
 class CalendarModal(ModalScreen[None]):
-    """Today's meetings, with a preview, framed over the right-hand panels."""
+    """Today's meetings, with a preview, framed below the tab strip."""
 
     DEFAULT_CSS = f"""
     CalendarModal {{
@@ -42,9 +42,9 @@ class CalendarModal(ModalScreen[None]):
     }}
 
     CalendarModal > #calendar-frame {{
-        width: {100 - SIDEBAR_WIDTH_PERCENT}%;
+        width: 100%;
         height: 100%;
-        margin: {BANNER_HEIGHT} 0 {FOOTER_HEIGHT} 0;
+        margin: {BANNER_HEIGHT + TAB_STRIP_HEIGHT} 0 {FOOTER_HEIGHT} 0;
         border: solid $accent;
         background: $surface;
     }}
