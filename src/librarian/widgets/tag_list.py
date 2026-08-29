@@ -13,7 +13,7 @@ from textual.widgets import DirectoryTree, Label, ListItem, ListView, Static, Tr
 from textual.widgets._directory_tree import DirEntry
 from textual.widgets._tree import TOGGLE_STYLE, TreeNode
 
-from ..appearance import FolderAppearance
+from ..appearance import CraftAppearance, FolderAppearance
 from ..craft import CraftFolder
 from .craft_tree import CraftTree
 
@@ -325,9 +325,11 @@ class TagList(Vertical):
         show_folders: bool = True,
         show_tags: bool = True,
         show_craft: bool = False,
+        craft_appearance: CraftAppearance | None = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
+        self._craft_appearance = craft_appearance
         self.tools = tuple(tools) if tools is not None else DEFAULT_TOOLS
         self.show_folders = show_folders
         self.show_tags = show_tags
@@ -367,7 +369,7 @@ class TagList(Vertical):
         if self.show_craft:
             with Vertical(id="craft-panel"):
                 yield Static("CRAFT", classes="tag-header", id="craft-header")
-                yield CraftTree(id="craft-tree")
+                yield CraftTree(appearance=self._craft_appearance, id="craft-tree")
         if self.show_tags:
             with Vertical(id="tags-panel"):
                 yield Static("ALL TAGS", classes="tag-header", id="all-tags-header")

@@ -24,37 +24,35 @@ Two things worth keeping on this side:
   which survives `./install.sh` — that syncs `--inexact` — but a bare `uv sync` is exact and would
   replace it with the published package.
 
-### Sidebar layout rework — direction not yet chosen
+### Sidebar layout rework — tabs mockup awaiting sign-off
 With everything enabled the sidebar stacks four panels (Folders, Craft, Tags, Tools), each with
 its own border color, and Folders shares green with Preview. Jefferson finds it busy, jumbled, and
-inconsistent (2026-08-28); options documented for a later decision, and he is bringing his own
-ideas before committing to a direction.
+inconsistent (2026-08-28). Direction chosen 2026-08-28: **full-width tool tabs** — a
+tab strip running the width of the terminal, directly under the banner, one tab per tool with
+its full name (Local Folders, Craft Docs, Projects, Reminders, Calendar, TaskPaper). Each tab
+is a whole workspace, and only tools set true in `[tools]` expose a tab. Consequences: the
+Tools menu and the Reminders/Calendar/Projects modals go away (embedded panels mount tab-sized
+instead — which forces the `q`-meaning question below), TaskPaper's tab is a launcher that
+suspends into taskpapertui, each browsing tab keeps its own tags panel (ALL TAGS in Local
+Folders, CRAFT TAGS in Craft Docs) replacing the shared source-scoped panel, and borders
+normalize to one neutral plus a single focus accent. Rendered Textual mockup: artifact
+"Librarian Tabbed Sidebar" (rev 2), also at ~/Downloads/sidebar-tabs-mockup.html. Open
+questions before a spec'd plan: global tab-cycle key, lazy panel load on first activation,
+the embedded panels' `q -> app.quit` outside a modal, TaskPaper-tab ergonomics, startup tab.
 
-1. **Visual normalization** — keep the layout; one neutral border for inactive panels, a single
-   accent for the focused panel, consistent headers (drop the ★, one header color). Mostly CSS.
-   Fixes inconsistency, not density.
-2. **Unified browser tree** — merge Folders and Craft into one BROWSE panel: a single tree with
-   `Local` and `Craft` top-level sections. Sidebar returns to three panels; the cursor position in
-   one tree defines `active_source` and the tags scope, with no second tree to arbitrate. Scales
-   to future sources as new sections. Touches active_source, focus order, vim keys, and startup —
-   needs a spec'd plan and a mockup sign-off.
-3. **Tabbed sources** — fold the browsers into a `TabbedContent`, one source visible at a time.
-   Least visual noise, but reverses the "both visible, neither hides the other" decision hardest,
-   and Textual tab widgets carry their own focus/keybinding quirks. Held in reserve.
+Rejected along the way: a unified BROWSE tree merging Folders and Craft into one tree
+(Jefferson: keep them separate tabs), and sidebar-level tabs with a shared Tags panel below
+(rev 1 of the mockup — superseded by full-width tabs the same day).
 
-### Craft folder icons
-Craft assigns icons to folders, but the REST API does not expose them — `GET /folders` returns
-only `id`, `name`, `documentCount`, and children (docs and live response both confirm,
-2026-08-28). The data exists server-side: Craft's MCP v2 (release 3.4.4) added folder icon/color
-management, MCP-only so far; and unlike Obsidian's Notebook Navigator there is no readable local
-file to mirror (Craft's store is a binary Realm database).
-
-Buildable now as a **manual config layer**: a `[craft-folders.icons]`/`colors` table keyed by
-Craft folder path, feeding a `render_label` on `CraftTree` like `MarkdownDirectoryTree`'s. The
-glyph machinery (`icons.py`, Lucide names, nerd/emoji styles, `pad_glyph`) is source-agnostic and
-needs no changes. Hand-maintained by design — Craft-side icon changes don't propagate. Structure
-the appearance source so an automatic one can slot in if the REST API ever gains the fields
-(plausible, given MCP parity).
+### ~~Craft folder icons~~ — done 2026-08-28
+Built as the manual config layer plus one addition prompted by Jefferson's observation that his
+Craft space's top-level folders mirror the vault's: `appearance.CraftAppearance` layers
+`[craft-folders.icons]`/`[craft-folders.colors]` (keys are Craft folder paths, "projects/2026")
+over a **same-path fallback into the local folder appearance** — so matching folder names inherit
+Notebook Navigator icons with no config at all — over the plain glyph. `CraftTree.render_label`
+mirrors `MarkdownDirectoryTree`'s. Craft-side icons still can't be mirrored (the REST API doesn't
+expose them; Craft's MCP v2 does, MCP-only); revisit an automatic source if the API gains the
+fields — `CraftAppearance` is structured so one can slot in above the fallback.
 
 ### Links inside Craft previews
 From the craft-tags acceptance gate (2026-08-28): links in a previewed Craft document don't work.

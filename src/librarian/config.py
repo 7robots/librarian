@@ -241,6 +241,21 @@ class FoldersConfig:
 
 
 @dataclass
+class CraftFoldersConfig:
+    """Per-Craft-folder icons and colors, keyed by Craft folder path.
+
+    Keys are folder names joined with "/" from the top of the Craft space
+    (e.g. "Projects/2026"). Hand-maintained by design: the Craft REST API does
+    not expose the icons folders carry in Craft itself, so nothing here can be
+    mirrored automatically. Folders with no entry fall back to the local folder
+    appearance for the same relative path -- see `appearance.CraftAppearance`.
+    """
+
+    icons: dict[str, str] = field(default_factory=dict)
+    colors: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
 class ObsidianConfig:
     """Appearance mirroring for Obsidian vaults (Notebook Navigator plugin)."""
 
@@ -303,6 +318,7 @@ class Config:
     tools: ToolsConfig = field(default_factory=ToolsConfig)
     icons: IconConfig = field(default_factory=IconConfig)
     folders: FoldersConfig = field(default_factory=FoldersConfig)
+    craft_folders: CraftFoldersConfig = field(default_factory=CraftFoldersConfig)
     obsidian: ObsidianConfig = field(default_factory=ObsidianConfig)
     keys: KeysConfig = field(default_factory=KeysConfig)
 
@@ -419,6 +435,13 @@ class Config:
             colors=_string_map(folders_data.get("colors")),
         )
 
+        # Parse per-Craft-folder icons/colors
+        craft_folders_data = data.get("craft-folders", {})
+        craft_folders = CraftFoldersConfig(
+            icons=_string_map(craft_folders_data.get("icons")),
+            colors=_string_map(craft_folders_data.get("colors")),
+        )
+
         # Parse obsidian integration config
         obsidian_data = data.get("obsidian", {})
         obsidian = ObsidianConfig(
@@ -443,6 +466,7 @@ class Config:
             tools=tools,
             icons=icons,
             folders=folders,
+            craft_folders=craft_folders,
             obsidian=obsidian,
             keys=keys,
         )
@@ -533,6 +557,30 @@ class Config:
                 "folders.colors",
                 self.folders.colors,
                 comment='e.g. "projects" = "#8b5cf6"',
+            )
+        )
+
+        lines.extend([
+            '',
+            '# Per-Craft-folder icons and colors, keyed by Craft folder path',
+            '# (folder names joined with "/", e.g. "Projects/2026"). Folders',
+            '# with no entry reuse the local folder appearance for the same',
+            '# relative path, so a Craft space mirroring the vault\'s top-level',
+            '# folders needs nothing here.',
+        ])
+        lines.extend(
+            _toml_table(
+                "craft-folders.icons",
+                self.craft_folders.icons,
+                comment='e.g. "Projects" = "briefcase"',
+            )
+        )
+        lines.append('')
+        lines.extend(
+            _toml_table(
+                "craft-folders.colors",
+                self.craft_folders.colors,
+                comment='e.g. "Projects" = "#8b5cf6"',
             )
         )
 

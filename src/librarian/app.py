@@ -18,7 +18,7 @@ from .actions import (
     ProjectsActionsMixin,
     RemindersActionsMixin,
 )
-from .appearance import build_folder_appearance
+from .appearance import build_craft_appearance, build_folder_appearance
 from .calendar import clear_cache as clear_calendar_cache
 from .calendar_store import init_store
 from .config import Config
@@ -197,14 +197,18 @@ class LibrarianApp(
 
     def compose(self) -> ComposeResult:
         yield Banner()
+        # The Craft tree's appearance layers over the local one (same-path
+        # fallback), so both are built from the one instance.
+        appearance = build_folder_appearance(self.config)
         with Horizontal(id="main-container"):
             yield TagList(
                 scan_directory=self.config.scan_directory,
-                appearance=build_folder_appearance(self.config),
+                appearance=appearance,
                 tools=self.visible_tools(),
                 show_folders=self.config.tools.is_enabled("folders"),
                 show_tags=self.config.tools.is_enabled("tags"),
                 show_craft=self.config.tools.is_enabled("craft"),
+                craft_appearance=build_craft_appearance(self.config, appearance),
                 id="tag-list",
                 classes="panel",
             )

@@ -298,6 +298,11 @@ class FoldersConfig:
     colors: dict[str, str]  # relative folder path -> hex color
 
 @dataclass
+class CraftFoldersConfig:   # [craft-folders] in TOML
+    icons: dict[str, str]   # Craft folder path ("a/b") -> Lucide icon name
+    colors: dict[str, str]  # Craft folder path -> hex color
+
+@dataclass
 class ObsidianConfig:
     enabled: bool = True
 
@@ -900,6 +905,15 @@ Things that are deliberate and easy to "fix" back into bugs:
 - Craft docs are not files: `FileList.update_craft_docs()` empties `_files`, so the file actions
   (rename/delete/move/export) see no selection. `SYSTEM_FOLDER_IDS` (unsorted, daily notes, trash,
   templates) are excluded from the tree. Listings and doc markdown share a 5-minute TTL cache.
+- **Craft folder icons are layered, per key** (`appearance.CraftAppearance`): explicit
+  `[craft-folders.icons]`/`[craft-folders.colors]` config (keys are Craft folder paths,
+  `"projects/2026"`) > the *local* folder appearance for the same relative path > plain glyph.
+  The same-path fallback is the point: Craft spaces here mirror the vault's top-level folders, so
+  matching names inherit Notebook Navigator icons with zero config. The REST API does not expose
+  Craft's own folder icons, so nothing can be mirrored from Craft itself.
+  `CraftTree.folder_key()` derives a node's path key by walking its ancestors;
+  `CraftTree._appearance` is set *before* `super().__init__` because Tree renders its root label
+  during init. Tests: `test_craft_icons.py`.
 - **Regaining app focus drops the Craft cache and refetches the selected doc's preview** — coming
   back to Librarian is exactly when an edit made in Craft.app should become visible. The doc
   *listing* is deliberately not relisted: that would reset the cursor to the first doc.

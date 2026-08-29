@@ -137,6 +137,88 @@ class FolderAppearance:
         return folder_glyph(expanded, self.glyph_style)
 
 
+@dataclass
+class CraftAppearance:
+    """Appearance for Craft folders, keyed by Craft folder path ("A/B").
+
+    Craft's REST API does not expose folder icons, so these are layered from
+    what Librarian can see, consulted per key:
+
+    1. ``[craft-folders.icons]`` / ``[craft-folders.colors]`` from config
+    2. The local folder appearance for the *same relative path* -- Craft spaces
+       often mirror the vault's top-level folders, so a Craft folder named
+       "Projects" picks up whatever the local "Projects" folder shows, config
+       and Notebook Navigator alike
+    3. The plain folder glyph, with no color
+
+    Keys are folder names joined with "/" from the top of the Craft space,
+    matching how config keys are written.
+    """
+
+    glyph_style: GlyphStyle
+    icons: dict[str, str] = field(default_factory=dict)
+    colors: dict[str, str] = field(default_factory=dict)
+    local: FolderAppearance | None = None
+    local_root: Path | None = None
+
+    @property
+    def color_icon_only(self) -> bool:
+        return self.local.color_icon_only if self.local is not None else False
+
+    def _local_path(self, key: str) -> Path | None:
+        """The scan-directory path a Craft folder path would have locally."""
+        if self.local is None or self.local_root is None:
+            return None
+        return self.local_root / key
+
+    def icon_name_for(self, key: str) -> str | None:
+        name = self.icons.get(key)
+        if name:
+            return name
+        path = self._local_path(key)
+        if path is not None:
+            return self.local.icon_name_for(path)
+        return None
+
+    def color_for(self, key: str) -> str | None:
+        color = lookup_with_inheritance(self.colors, key)
+        if color:
+            return color
+        path = self._local_path(key)
+        if path is not None:
+            return self.local.color_for(path)
+        return None
+
+    def folder_icon(self, key: str, expanded: bool = False) -> str:
+        """Padded glyph for a Craft folder, falling back to the plain glyph."""
+        name = self.icon_name_for(key)
+        if name:
+            return resolve_icon(name, self.glyph_style)
+        return folder_glyph(expanded, self.glyph_style)
+
+
+def build_craft_appearance(
+    config, local: FolderAppearance | None = None
+) -> CraftAppearance:
+    """Assemble the appearance layers for the Craft folder tree.
+
+    Args:
+        config: Application config, read for ``craft_folders`` and the paths
+            the same-name fallback resolves against
+        local: The local folder tree's appearance, reused as the same-path
+            fallback source; built from config when not supplied
+    """
+    if local is None:
+        local = build_folder_appearance(config)
+    return CraftAppearance(
+        glyph_style=local.glyph_style,
+        icons=dict(config.craft_folders.icons),
+        colors=dict(config.craft_folders.colors),
+        local=local,
+        local_root=config.scan_directory,
+    )
+
+
 def build_folder_appearance(config, scan_directory: Path | None = None) -> FolderAppearance:
     """Assemble the appearance layers for a scan directory.
 
