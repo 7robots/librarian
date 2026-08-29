@@ -61,7 +61,7 @@ CLAUDE.md UI Layout / Widget Communication / Keyboard Navigation sections rewrit
 sidebar item closed.
 Verify: docs read true against the code (grep the claims).
 
-### Phase 15 — acceptance gate  ⏳
+### Phase 15 — acceptance gate  ✅ 603 passed
 One scripted pilot flow: launch with all tools on → startup tab Local Folders → switch to Craft
 Docs (tags flip to CRAFT TAGS) → activate Calendar (modal opens, strip snaps back) → close →
 folder listing intact → full suite green.

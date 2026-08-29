@@ -286,3 +286,57 @@ class TestLauncherTabs:
             tag_list = app_all_tools.query_one(TagList)
             assert tag_list.workspace == "folders"
             assert tag_list.tags_scope == "local"
+
+
+class TestAcceptance:
+    """The tool-tabs acceptance gate (docs/plans/tool-tabs.md, phase 15).
+
+    One flow across every moving part: startup on Local Folders, a workspace
+    switch to Craft Docs with the tags scope following, a launcher tab opening
+    its modal and snapping back, and the folder listing intact afterwards.
+    """
+
+    async def test_the_whole_flow(self, app_all_tools):
+        app = app_all_tools
+        async with app.run_test(size=(110, 34)) as pilot:
+            await pilot.pause()
+            tabs = app.query_one(ToolTabs)
+            tag_list = app.query_one(TagList)
+            file_list = app.query_one(FileList)
+
+            # Startup: Local Folders tab, folder tree leading, local tags.
+            assert tabs.active == "tab-local"
+            assert tag_list.workspace == "folders"
+            assert tags_header(app) == "ALL TAGS"
+            assert "note.md" in [p.name for p in file_list._files]
+
+            # Switch to Craft Docs: tree flips, tags scope follows.
+            tabs.active = "tab-craft"
+            await pilot.pause()
+            await pilot.pause()
+            assert tag_list.workspace == "craft"
+            assert tags_header(app) == "CRAFT TAGS"
+            assert tag_list.active_source == "craft"
+
+            # A launcher tab opens its modal and snaps back to Craft Docs.
+            tabs.active = "tab-calendar"
+            for _ in range(20):
+                await pilot.pause()
+                if isinstance(app.screen, CalendarModal):
+                    break
+            assert isinstance(app.screen, CalendarModal)
+            assert tabs.active == "tab-craft"
+
+            # Close it: the Craft workspace is exactly where it was.
+            await pilot.press("escape")
+            await pilot.pause()
+            assert not isinstance(app.screen, CalendarModal)
+            assert tag_list.workspace == "craft"
+            assert tag_list.active_source == "craft"
+
+            # And back to Local Folders: the folder listing returns.
+            tabs.active = "tab-local"
+            await pilot.pause()
+            await pilot.pause()
+            assert tags_header(app) == "ALL TAGS"
+            assert "note.md" in [p.name for p in file_list._files]

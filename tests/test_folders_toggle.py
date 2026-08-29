@@ -139,7 +139,7 @@ class TestFoldersOff:
             assert [p.name for p in file_list._files] == ["Alpha.md"]
 
     async def test_tab_cycle_skips_the_missing_tree(self, app):
-        """No tools are enabled either, so the cycle is tags, files, preview."""
+        """The cycle is tags, files, preview, then the tab strip."""
         async with app.run_test(size=(100, 40)) as pilot:
             await pilot.pause()
             tag_list = app.query_one(TagList)
@@ -147,7 +147,7 @@ class TestFoldersOff:
             preview = app.query_one("#preview")
 
             seen = []
-            for _ in range(3):
+            for _ in range(4):
                 app.action_focus_next()
                 await pilot.pause()
                 seen.append(app.focused)
@@ -155,6 +155,7 @@ class TestFoldersOff:
             assert seen == [
                 file_list.list_view,
                 preview.scroll_view,
+                app.query_one("#tool-tabs"),
                 tag_list.all_tags_list_view,
             ]
 

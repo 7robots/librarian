@@ -321,17 +321,14 @@ class TestBrowsing:
 
 
 class TestFocusOrder:
-    async def test_tab_walks_folders_craft_tags(self, app):
+    async def test_tab_skips_the_hidden_craft_tree(self, app):
+        """Only the active workspace's tree is a stop; Craft's is hidden here."""
         async with app.run_test(size=(100, 40)) as pilot:
             await pilot.pause()
             tag_list = app.query_one(TagList)
 
             tag_list.directory_tree.focus()
             await pilot.pause()
-            app.action_focus_next()
-            await pilot.pause()
-            assert app.focused is tag_list.craft_tree
-
             app.action_focus_next()
             await pilot.pause()
             assert app.focused is tag_list.all_tags_list_view
